@@ -50,6 +50,7 @@ func NewHandler(service Service) Handler {
 func AuthMiddleware(authDep Handler) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			ctx := r.Context()
 			// Allow signup and login without authentication
 			if r.URL.Path == "/signup" || r.URL.Path == "/signin" {
 				next.ServeHTTP(w, r)
@@ -78,7 +79,7 @@ func AuthMiddleware(authDep Handler) func(http.Handler) http.Handler {
 			}
 
 			// Getting User Details from userRepo
-			user, err := authDep.service.getUserByEmail(userEmail)
+			user, err := authDep.service.getUserByEmail(ctx, userEmail)
 			if err != nil {
 				log.Println("Error Retrieving the UserID From email in authmiddleware")
 				http.Error(w, "User not found", http.StatusUnauthorized)
@@ -86,13 +87,13 @@ func AuthMiddleware(authDep Handler) func(http.Handler) http.Handler {
 			}
 
 			// Getting User Role from userRepo
-			userRole, err := authDep.service.getUserHighestRole(user.ID)
+			userRole, err := authDep.service.getUserHighestRole(ctx, user.ID)
 			if err != nil {
 				log.Println("Error Retrieving the role for user")
 			}
 
 			// Add user info to request context
-			ctx := context.WithValue(r.Context(), "userInfo", struct {
+			ctx = context.WithValue(r.Context(), "userInfo", struct {
 				UserID    string
 				UserEmail string
 				UserRole  int
@@ -103,7 +104,7 @@ func AuthMiddleware(authDep Handler) func(http.Handler) http.Handler {
 			})
 
 			// Update last login
-			err = authDep.service.updateLastLogin(user.ID)
+			err = authDep.service.updateLastLogin(ctx)
 			if err != nil {
 				log.Println("Error Updating the Login Info")
 				return

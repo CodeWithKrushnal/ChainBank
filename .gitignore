@@ -1,2 +1,4 @@
 .vscode/
-env.sh
+.VSCodeCounter/
+wallets/
+cmd/app.env

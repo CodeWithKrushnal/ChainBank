@@ -1,8 +1,10 @@
 package user
 
 import (
+	"context"
 	"crypto/ecdsa"
 	"encoding/hex"
+	"fmt"
 	"log"
 	"math/big"
 	"strconv"
@@ -23,7 +25,7 @@ type service struct {
 }
 
 // Constructor function
-func NewService(userRepo repo.UserStorer, walletRepo repo.WalletStorer, ethRepo ethereum.EthRepo) Service {
+func NewService(ctx context.Context, userRepo repo.UserStorer, walletRepo repo.WalletStorer, ethRepo ethereum.EthRepo) Service {
 	return service{
 		userRepo:   userRepo,
 		walletRepo: walletRepo,
@@ -33,8 +35,12 @@ func NewService(userRepo repo.UserStorer, walletRepo repo.WalletStorer, ethRepo 
 
 // Add necesary method signature to be made accesible by service layer
 type Service interface {
-	CreateUserAccount(req SignupRequest) (string, error)
-	AuthenticateUser(credentials struct{ Email, Password string }) (map[string]string, error)
+	CreateUserAccount(ctx context.Context, req SignupRequest) (string, error)
+	AuthenticateUser(ctx context.Context, credentials struct{ Email, Password string }) (map[string]string, error)
+	InsertKYCVerificationService(ctx context.Context, UserEmail, documentType, documentNumber, verificationStatus string) (string, error)
+	GetAllKYCVerificationsService(ctx context.Context) ([]map[string]interface{}, error)
+	UpdateKYCVerificationStatusService(ctx context.Context, kycID, verificationStatus, verifiedBy string) error
+	GetKYCDetailedInfo(ctx context.Context, kycID, userEmail string) ([]map[string]interface{}, error)
 }
 
 func GenerateTokens(email string) (string, string, error) {
@@ -80,13 +86,13 @@ func PrivateKeyToHex(privateKey *ecdsa.PrivateKey) string {
 }
 
 // Service functions
-func (sd service) CreateUserAccount(req SignupRequest) (string, error) {
+func (sd service) CreateUserAccount(ctx context.Context, req SignupRequest) (string, error) {
 	digitRole, err := strconv.Atoi(req.Role)
 	if err != nil || (digitRole != 1 && digitRole != 2) {
 		return "", err
 	}
 
-	usernameExists, emailExists, err := sd.userRepo.UserExists(req.Username, req.Email)
+	usernameExists, emailExists, err := sd.userRepo.UserExists(ctx, req.Username, req.Email)
 	if err != nil {
 		return "", err
 	}
@@ -110,11 +116,11 @@ func (sd service) CreateUserAccount(req SignupRequest) (string, error) {
 		return "", err
 	}
 
-	if err := sd.userRepo.CreateUser(req.Username, req.Email, string(hashedPassword), req.FullName, req.DOB, walletAddress, digitRole); err != nil {
+	if err := sd.userRepo.CreateUser(ctx, req.Username, req.Email, string(hashedPassword), req.FullName, req.DOB, walletAddress, digitRole); err != nil {
 		return "", err
 	}
 
-	user, err := sd.userRepo.GetUserByEmail(req.Email)
+	user, err := sd.userRepo.GetUserByEmail(ctx, req.Email)
 	if err != nil {
 		log.Println("Error Retrieving User ID: ", err.Error())
 	}
@@ -124,8 +130,8 @@ func (sd service) CreateUserAccount(req SignupRequest) (string, error) {
 	return walletAddress, nil
 }
 
-func (sd service) AuthenticateUser(credentials struct{ Email, Password string }) (map[string]string, error) {
-	user, err := sd.userRepo.GetUserByEmail(credentials.Email)
+func (sd service) AuthenticateUser(ctx context.Context, credentials struct{ Email, Password string }) (map[string]string, error) {
+	user, err := sd.userRepo.GetUserByEmail(ctx, credentials.Email)
 	if err != nil {
 		return nil, err
 	}
@@ -143,4 +149,42 @@ func (sd service) AuthenticateUser(credentials struct{ Email, Password string })
 		"login_token": loginToken,
 		"reset_token": resetToken,
 	}, nil
+}
+
+// InsertKYCVerificationService inserts a new KYC verification record.
+func (sd service) InsertKYCVerificationService(ctx context.Context, UserEmail, documentType, documentNumber, verificationStatus string) (string, error) {
+	user, err := sd.userRepo.GetUserByEmail(ctx, UserEmail)
+	if err != nil {
+		return "", err
+	}
+	return sd.userRepo.InsertKYCVerification(ctx, user.ID, documentType, documentNumber, verificationStatus)
+}
+
+// GetAllKYCVerificationsService retrieves all KYC verification records.
+func (sd service) GetAllKYCVerificationsService(ctx context.Context) ([]map[string]interface{}, error) {
+	return sd.userRepo.GetAllKYCVerifications(ctx)
+}
+
+// UpdateKYCVerificationStatusService updates verification_status, verified_at, and verified_by.
+func (sd service) UpdateKYCVerificationStatusService(ctx context.Context, kycID, verificationStatus, verifiedBy string) error {
+	return sd.userRepo.UpdateKYCVerificationStatus(ctx, kycID, verificationStatus, verifiedBy)
+}
+
+// GetKYCDetailedInfo retrieves KYC details based on either kyc_id or user_id.
+func (sd service) GetKYCDetailedInfo(ctx context.Context, kycID, userEmail string) ([]map[string]interface{}, error) {
+	if (kycID == "" && userEmail == "") || (kycID != "" && userEmail != "") {
+		return nil, fmt.Errorf("exactly one of kycID or userEmail must be provided")
+	}
+
+	var userID string
+	if userEmail != "" {
+		user, err := sd.userRepo.GetUserByEmail(ctx, userEmail)
+		if err != nil {
+			log.Println("Error Retrieving user id related to provided email", err)
+			return nil, err
+		}
+		userID = user.ID
+	}
+
+	return sd.userRepo.GetKYCDetailedInfo(ctx, kycID, userID)
 }
