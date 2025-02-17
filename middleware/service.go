@@ -14,7 +14,7 @@ type service struct {
 type Service interface {
 	getUserByEmail(ctx context.Context, email string) (repo.User, error)
 	getUserHighestRole(ctx context.Context, userID string) (int, error)
-	updateLastLogin(ctx context.Context) error
+	updateLastLogin(ctx context.Context, userID string) error
 }
 
 func NewService(ctx context.Context, userRepo repo.UserStorer, walletRepo repo.WalletStorer) Service {
@@ -32,6 +32,6 @@ func (authServiceDep service) getUserHighestRole(ctx context.Context, userID str
 	return authServiceDep.userRepo.GetUserHighestRole(ctx, userID)
 }
 
-func (authServiceDep service) updateLastLogin(ctx context.Context) error {
-	return authServiceDep.userRepo.UpdateLastLogin(ctx)
+func (authServiceDep service) updateLastLogin(ctx context.Context, userID string) error {
+	return authServiceDep.userRepo.UpdateLastLogin(ctx, userID)
 }

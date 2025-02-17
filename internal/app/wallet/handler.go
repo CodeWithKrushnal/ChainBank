@@ -9,36 +9,20 @@ import (
 	"github.com/google/uuid"
 )
 
-
-
-
-
 // BalanceResponse defines the structure of the API response.
 type BalanceResponse struct {
 	WalletID string `json:"wallet_id"`
 	Balance  string `json:"balance"`
 }
 
-
-
-
-
 type Handler struct {
-	service Service
+	Service Service
 }
-
-
-
-
 
 // Constructor function
 func NewHandler(service Service) Handler {
-	return Handler{service: service}
+	return Handler{Service: service}
 }
-
-
-
-
 
 // GetBalanceHandler handles the balance retrieval request.
 func (hd Handler) GetBalanceHandler(w http.ResponseWriter, r *http.Request) {
@@ -46,13 +30,17 @@ func (hd Handler) GetBalanceHandler(w http.ResponseWriter, r *http.Request) {
 	log.Println("Incoming Request On GetBalance Handler")
 
 	// Retrieve user info from context
-	userInfo, ok := r.Context().Value("userInfo").(struct {
-		UserID    string
-		UserEmail string
-		UserRole  int
-	})
+	UserID, ok := ctx.Value("UserID").(string)
 	if !ok {
 		http.Error(w, "Unauthorized: user info not found in context", http.StatusUnauthorized)
+		return
+	}
+
+	//get userinfo from userID
+	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
+	if err != nil {
+		log.Println("Error retriving user info from user ID")
+		http.Error(w, "Error retriving user info from user ID", http.StatusInternalServerError)
 		return
 	}
 
@@ -61,14 +49,14 @@ func (hd Handler) GetBalanceHandler(w http.ResponseWriter, r *http.Request) {
 	queryEmail := r.URL.Query().Get("email")
 
 	// Get Wallet ID
-	walletID, err := hd.service.GetWalletIDForUser(ctx, userInfo, queryEmail, queryUserID)
+	walletID, err := hd.Service.GetWalletIDForUser(ctx, userInfo, queryEmail, queryUserID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Get Balance
-	balance, err := hd.service.GetBalanceByWalletID(ctx, walletID)
+	balance, err := hd.Service.GetBalanceByWalletID(ctx, walletID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -91,21 +79,20 @@ type TransferRequest struct {
 	Password       string `json:"password"`
 }
 
-
-
-
-
 // TransferFundsHandler handles fund transfer requests.
 func (hd *Handler) TransferFundsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	userInfo, ok := r.Context().Value("userInfo").(struct {
-		UserID    string
-		UserEmail string
-		UserRole  int
-	})
+
+	// Extract user info from context
+	UserID, ok := ctx.Value("UserID").(string)
 	if !ok {
 		http.Error(w, "Unauthorized: user info not found in context", http.StatusUnauthorized)
 		return
+	}
+
+	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
+	if err != nil {
+		log.Println("Error Retrieving the User information from id", err.Error())
 	}
 
 	var req TransferRequest
@@ -115,7 +102,7 @@ func (hd *Handler) TransferFundsHandler(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Process fund transfer
-	txHash, fee, err := hd.service.TransferFunds(ctx, userInfo, req)
+	txHash, fee, err := hd.Service.TransferFunds(ctx, userInfo, req)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -131,22 +118,22 @@ func (hd *Handler) TransferFundsHandler(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(response)
 }
 
-
-
-
-
 func (hd Handler) GetTransactionsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log.Println("Incoming Request On GetTransactions Handler")
 
-	userInfo, ok := ctx.Value("userInfo").(struct {
-		UserID    string
-		UserEmail string
-		UserRole  int
-	})
-
+	// Retrieve user info from context
+	UserID, ok := ctx.Value("UserID").(string)
 	if !ok {
 		http.Error(w, "Unauthorized: user info not found in context", http.StatusUnauthorized)
+		return
+	}
+
+	//get userinfo from userID
+	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
+	if err != nil {
+		log.Println("Error retriving user info from user ID")
+		http.Error(w, "Error retriving user info from user ID", http.StatusInternalServerError)
 		return
 	}
 
@@ -159,7 +146,7 @@ func (hd Handler) GetTransactionsHandler(w http.ResponseWriter, r *http.Request)
 	receiverEmail := r.URL.Query().Get("receiverEmail")
 	log.Print(senderEmail, receiverEmail)
 
-	transactions, err := hd.service.FetchTransactions(ctx, uuid.Nil, senderEmail, "", commonEmail, time.Now(), time.Now(), 1, 10)
+	transactions, err := hd.Service.FetchTransactions(ctx, uuid.Nil, senderEmail, "", commonEmail, time.Now(), time.Now(), 1, 10)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

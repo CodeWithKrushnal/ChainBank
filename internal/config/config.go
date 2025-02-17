@@ -25,6 +25,7 @@ type ConfigStruct struct {
 	JWTResetSecretKey string `mapstructure:"JWT_RESET_SECRET"`
 	SuperUserEmail    string `mapstructure:"SUPER_USER_EMAIL"`
 	SuperUserPassword string `mapstructure:"SUPER_USER_PASSWORD"`
+	SendGridAPIKey    string `mapstructure:"SENDGRID_API_KEY"`
 }
 
 var ConfigDetails ConfigStruct

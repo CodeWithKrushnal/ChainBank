@@ -3,14 +3,16 @@ package middleware
 import (
 	"context"
 	"errors"
-	"github.com/CodeWithKrushnal/ChainBank/internal/config"
-	"github.com/golang-jwt/jwt/v5"
+	"fmt"
 	"log"
 	"net/http"
 	"strings"
+
+	"github.com/CodeWithKrushnal/ChainBank/internal/config"
+	"github.com/golang-jwt/jwt/v5"
 )
 
-func ValidateJWT(tokenString string) (string, error) {
+func ValidateJWT(tokenString string, originIP string) (string, error) {
 
 	JWT_SECRET := []byte(config.ConfigDetails.JWTSecretKey)
 
@@ -30,7 +32,11 @@ func ValidateJWT(tokenString string) (string, error) {
 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
 		userEmail, ok := claims["email"].(string)
 		if !ok {
-			return "", errors.New("invalid token claims")
+			return "", fmt.Errorf("invalid token claims")
+		}
+
+		if claims["origin"].(string) != originIP {
+			return "", fmt.Errorf("Token is invalid : invalid Token Origin")
 		}
 		return userEmail, nil
 	}
@@ -72,7 +78,7 @@ func AuthMiddleware(authDep Handler) func(http.Handler) http.Handler {
 			}
 
 			// Validate token
-			userEmail, err := ValidateJWT(tokenParts[1])
+			userEmail, err := ValidateJWT(tokenParts[1], r.RemoteAddr)
 			if err != nil {
 				http.Error(w, "Unauthorized: Invalid Token", http.StatusUnauthorized)
 				return
@@ -86,27 +92,13 @@ func AuthMiddleware(authDep Handler) func(http.Handler) http.Handler {
 				return
 			}
 
-			// Getting User Role from userRepo
-			userRole, err := authDep.service.getUserHighestRole(ctx, user.ID)
-			if err != nil {
-				log.Println("Error Retrieving the role for user")
-			}
-
 			// Add user info to request context
-			ctx = context.WithValue(r.Context(), "userInfo", struct {
-				UserID    string
-				UserEmail string
-				UserRole  int
-			}{
-				UserID:    user.ID,
-				UserEmail: userEmail,
-				UserRole:  userRole,
-			})
+			ctx = context.WithValue(r.Context(), "UserID", user.ID)
 
 			// Update last login
-			err = authDep.service.updateLastLogin(ctx)
+			err = authDep.service.updateLastLogin(ctx, user.ID)
 			if err != nil {
-				log.Println("Error Updating the Login Info")
+				log.Println("Error Updating the Login Info", err.Error())
 				return
 			}
 

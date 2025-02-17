@@ -13,6 +13,7 @@ import (
 	"github.com/CodeWithKrushnal/ChainBank/internal/app/ethereum"
 	"github.com/CodeWithKrushnal/ChainBank/internal/config"
 	"github.com/CodeWithKrushnal/ChainBank/internal/repo"
+	"github.com/CodeWithKrushnal/ChainBank/utils"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/golang-jwt/jwt/v5"
 	"golang.org/x/crypto/bcrypt"
@@ -36,14 +37,15 @@ func NewService(ctx context.Context, userRepo repo.UserStorer, walletRepo repo.W
 // Add necesary method signature to be made accesible by service layer
 type Service interface {
 	CreateUserAccount(ctx context.Context, req SignupRequest) (string, error)
-	AuthenticateUser(ctx context.Context, credentials struct{ Email, Password string }) (map[string]string, error)
+	AuthenticateUser(ctx context.Context, credentials struct{ Email, Password string }, originIP string) (map[string]string, error)
 	InsertKYCVerificationService(ctx context.Context, UserEmail, documentType, documentNumber, verificationStatus string) (string, error)
 	GetAllKYCVerificationsService(ctx context.Context) ([]map[string]interface{}, error)
 	UpdateKYCVerificationStatusService(ctx context.Context, kycID, verificationStatus, verifiedBy string) error
 	GetKYCDetailedInfo(ctx context.Context, kycID, userEmail string) ([]map[string]interface{}, error)
+	GetUserByID(ctx context.Context, userID string) (utils.User, error)
 }
 
-func GenerateTokens(email string) (string, string, error) {
+func GenerateTokens(email string, originIP string) (string, string, error) {
 
 	JWT_SECRET := []byte(config.ConfigDetails.JWTSecretKey)
 	JWT_RESET_SECRET := []byte(config.ConfigDetails.JWTResetSecretKey)
@@ -54,9 +56,10 @@ func GenerateTokens(email string) (string, string, error) {
 
 	// Create Login Token
 	loginClaims := jwt.MapClaims{
-		"email": email,
-		"exp":   loginExpiration.Unix(),
-		"iat":   time.Now().Unix(),
+		"email":  email,
+		"exp":    loginExpiration.Unix(),
+		"iat":    time.Now().Unix(),
+		"origin": originIP,
 	}
 	loginToken := jwt.NewWithClaims(jwt.SigningMethodHS256, loginClaims)
 	loginTokenString, err := loginToken.SignedString(JWT_SECRET)
@@ -130,7 +133,7 @@ func (sd service) CreateUserAccount(ctx context.Context, req SignupRequest) (str
 	return walletAddress, nil
 }
 
-func (sd service) AuthenticateUser(ctx context.Context, credentials struct{ Email, Password string }) (map[string]string, error) {
+func (sd service) AuthenticateUser(ctx context.Context, credentials struct{ Email, Password string }, originIP string) (map[string]string, error) {
 	user, err := sd.userRepo.GetUserByEmail(ctx, credentials.Email)
 	if err != nil {
 		return nil, err
@@ -140,7 +143,7 @@ func (sd service) AuthenticateUser(ctx context.Context, credentials struct{ Emai
 		return nil, err
 	}
 
-	loginToken, resetToken, err := GenerateTokens(user.Email)
+	loginToken, resetToken, err := GenerateTokens(user.Email, originIP)
 	if err != nil {
 		return nil, err
 	}
@@ -187,4 +190,16 @@ func (sd service) GetKYCDetailedInfo(ctx context.Context, kycID, userEmail strin
 	}
 
 	return sd.userRepo.GetKYCDetailedInfo(ctx, kycID, userID)
+}
+
+func (sd service) GetUserByID(ctx context.Context, userID string) (utils.User, error) {
+	detailedUser, err := sd.userRepo.GetuserByID(ctx, userID)
+	if err != nil {
+		return utils.User{}, fmt.Errorf("Error Fetching the User from DB", err.Error())
+	}
+	role, err := sd.userRepo.GetUserHighestRole(ctx, userID)
+	if err != nil {
+		return utils.User{}, fmt.Errorf("Error Etching the role from DB", err.Error())
+	}
+	return utils.User{UserID: detailedUser.ID, UserEmail: detailedUser.Email, UserRole: role}, nil
 }

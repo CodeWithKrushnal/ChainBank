@@ -39,8 +39,9 @@ func NewHandler(service Service) *Handler {
 }
 
 // Handlers
-func (hd *Handler) SignupHandler(w http.ResponseWriter, r *http.Request) {
+func (hd Handler) SignupHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	log.Println("Incoming Request on /signup")
 	var req SignupRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
@@ -61,9 +62,12 @@ func (hd *Handler) SignupHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-func (hd *Handler) SignInHandler(w http.ResponseWriter, r *http.Request) {
+func (hd Handler) SignInHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	var credentials Credentials
+
+	originIP := r.RemoteAddr
+	log.Println(originIP)
 
 	if err := json.NewDecoder(r.Body).Decode(&credentials); err != nil {
 		http.Error(w, "Invalid request payload", http.StatusBadRequest)
@@ -73,7 +77,7 @@ func (hd *Handler) SignInHandler(w http.ResponseWriter, r *http.Request) {
 	response, err := hd.Service.AuthenticateUser(ctx, struct {
 		Email    string
 		Password string
-	}(credentials))
+	}(credentials), originIP)
 	if err != nil {
 		http.Error(w, "Invalid credentials", http.StatusUnauthorized)
 		return
@@ -87,13 +91,18 @@ func (hd Handler) RequestKYCHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	log.Println("Incoming Request On RequestKYCHandler")
 
-	userInfo, ok := ctx.Value("userInfo").(struct {
-		UserID    string
-		UserEmail string
-		UserRole  int
-	})
+	// Retrieve user info from context
+	UserID, ok := ctx.Value("UserID").(string)
 	if !ok {
 		http.Error(w, "Unauthorized: user info not found in context", http.StatusUnauthorized)
+		return
+	}
+
+	//get userinfo from userID
+	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
+	if err != nil {
+		log.Println("Error retriving user info from user ID")
+		http.Error(w, "Error retriving user info from user ID", http.StatusInternalServerError)
 		return
 	}
 
@@ -122,13 +131,18 @@ func (hd Handler) GetKYCRequestsHandler(w http.ResponseWriter, r *http.Request) 
 	ctx := r.Context()
 	log.Println("Incoming Request On GetKYCRequestsHandler")
 
-	userInfo, ok := ctx.Value("userInfo").(struct {
-		UserID    string
-		UserEmail string
-		UserRole  int
-	})
+	// Retrieve user info from context
+	UserID, ok := ctx.Value("UserID").(string)
 	if !ok {
 		http.Error(w, "Unauthorized: user info not found in context", http.StatusUnauthorized)
+		return
+	}
+
+	//get userinfo from userID
+	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
+	if err != nil {
+		log.Println("Error retriving user info from user ID")
+		http.Error(w, "Error retriving user info from user ID", http.StatusInternalServerError)
 		return
 	}
 
@@ -157,13 +171,18 @@ func (hd Handler) KYCRequestActionHandler(w http.ResponseWriter, r *http.Request
 	ctx := r.Context()
 	log.Println("Incoming Request On KYCRequestActionHandler")
 
-	userInfo, ok := ctx.Value("userInfo").(struct {
-		UserID    string
-		UserEmail string
-		UserRole  int
-	})
+	// Retrieve user info from context
+	UserID, ok := ctx.Value("UserID").(string)
 	if !ok {
 		http.Error(w, "Unauthorized: user info not found in context", http.StatusUnauthorized)
+		return
+	}
+
+	//get userinfo from userID
+	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
+	if err != nil {
+		log.Println("Error retriving user info from user ID")
+		http.Error(w, "Error retriving user info from user ID", http.StatusInternalServerError)
 		return
 	}
 
@@ -195,7 +214,7 @@ func (hd Handler) KYCRequestActionHandler(w http.ResponseWriter, r *http.Request
 		http.Error(w, "Invalid verification_status please use 1 for Verified and 2 for Unverified ", http.StatusBadRequest)
 	}
 
-	err := hd.Service.UpdateKYCVerificationStatusService(ctx, req.KYCID, verificationStatus, userInfo.UserID)
+	err = hd.Service.UpdateKYCVerificationStatusService(ctx, req.KYCID, verificationStatus, UserID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -206,19 +225,24 @@ func (hd Handler) KYCRequestActionHandler(w http.ResponseWriter, r *http.Request
 }
 
 // GetKYCDetailedInfoHandler handles requests to retrieve KYC details based on kyc_id or user_id.
-func (hd *Handler) GetKYCDetailedInfoHandler(w http.ResponseWriter, r *http.Request) {
+func (hd Handler) GetKYCDetailedInfoHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	kycID := r.URL.Query().Get("kyc_id")
 	userEmail := r.URL.Query().Get("user_email")
 
-	userInfo, ok := ctx.Value("userInfo").(struct {
-		UserID    string
-		UserEmail string
-		UserRole  int
-	})
+	// Retrieve user info from context
+	UserID, ok := ctx.Value("UserID").(string)
 	if !ok {
 		http.Error(w, "Unauthorized: user info not found in context", http.StatusUnauthorized)
+		return
+	}
+
+	//get userinfo from userID
+	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
+	if err != nil {
+		log.Println("Error retriving user info from user ID")
+		http.Error(w, "Error retriving user info from user ID", http.StatusInternalServerError)
 		return
 	}
 

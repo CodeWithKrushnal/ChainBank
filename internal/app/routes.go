@@ -40,9 +40,19 @@ func SetupRoutes(ctx context.Context, deps *Dependencies) *mux.Router {
 	protectedRoutes.HandleFunc("/kycdetails", userHandler.GetKYCDetailedInfoHandler).Methods(http.MethodGet)
 
 	// loan Routes
-	protectedRoutes.HandleFunc("/loan/create", loanHandler.CreateLoanOfferHandler).Methods(http.MethodPost)
-	protectedRoutes.HandleFunc("/loan/accept", loanHandler.AcceptLoanOfferHandler).Methods(http.MethodPost)
-	protectedRoutes.HandleFunc("/loan/repay", loanHandler.RepayLoanHandler).Methods(http.MethodPost)
+	protectedRoutes.HandleFunc("/loans/apply", loanHandler.CreateLoanApplicationHandler).Methods(http.MethodPost)
+	protectedRoutes.HandleFunc("/loans/applications/{application_id}", loanHandler.GetLoanApplicationByIDHandler).Methods(http.MethodGet)
+	protectedRoutes.HandleFunc("/loans/applications", loanHandler.GetLoanAppliactionsHandler).Methods(http.MethodGet)
+	protectedRoutes.HandleFunc("/loans/applications/{application_id}/offers", loanHandler.CreateLoanOfferHandler).Methods(http.MethodPost)
+	protectedRoutes.HandleFunc("/loans/offers/{offer_id}", loanHandler.GetLoanOfferByIDHandler).Methods(http.MethodGet)
+	protectedRoutes.HandleFunc("/loans/applications/{application_id}/offers", loanHandler.GetOffersByApplicationIDHandler).Methods(http.MethodGet)
+	protectedRoutes.HandleFunc("/loans/offers", loanHandler.GetLoanOffersHandler).Methods(http.MethodGet)
+	protectedRoutes.HandleFunc("/loans/offers/{offer_id}/accept", loanHandler.AcceptOfferHandler).Methods(http.MethodPut)
+	protectedRoutes.HandleFunc("/loans/disburse/{offer_id}", loanHandler.DisburseLoanHandler).Methods(http.MethodPost)
+	protectedRoutes.HandleFunc("/loans/{loan_id}", loanHandler.GetLoanDetailsByIDHandler).Methods(http.MethodGet)
+	protectedRoutes.HandleFunc("/loans", loanHandler.GetLoanDetailsHandler).Methods(http.MethodGet)
+	protectedRoutes.HandleFunc("/loans/{loan_id}/settle", loanHandler.CalculatePayableHandler).Methods(http.MethodGet)
+	protectedRoutes.HandleFunc("/loans/{loan_id}/settle", loanHandler.SettleLoanHandler).Methods(http.MethodPost)
 
 	return router
 }

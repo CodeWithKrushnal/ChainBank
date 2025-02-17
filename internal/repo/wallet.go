@@ -39,8 +39,8 @@ type WalletStorer interface {
 		amount *big.Float,
 		transactionType, status, transactionHash string,
 		fee *big.Float,
-	) (*Transaction, error)
-	GetTransactionByID(transactionID uuid.UUID) (*Transaction, error)
+	) (Transaction, error)
+	GetTransactionByID(transactionID uuid.UUID) (Transaction, error)
 	UpdateBalance(walletID string, balance *big.Float) error
 	GetTransactions(
 		transactionID uuid.UUID,
@@ -81,7 +81,7 @@ func (repoDep *WalletRepo) GetWalletID(email, userID string) (string, error) {
 		log.Println("Using email:", email)
 		err := repoDep.DB.QueryRow(getWalletIDFromEmailQuery, email).Scan(&walletID)
 		if err != nil {
-			log.Println("Error Retrieving wallet_id from email",email, err.Error())
+			log.Println("Error Retrieving wallet_id from email", email, err.Error())
 			return "", fmt.Errorf("Error Retrieving wallet_id from email : %v", err.Error())
 		}
 	}
@@ -316,7 +316,7 @@ func (repoDep *WalletRepo) RetrievePrivateKey(userID, walletID string) (string, 
 }
 
 // getTransactionByID fetches a transaction by its ID
-func (repoDep *WalletRepo) GetTransactionByID(transactionID uuid.UUID) (*Transaction, error) {
+func (repoDep *WalletRepo) GetTransactionByID(transactionID uuid.UUID) (Transaction, error) {
 
 	var transaction Transaction
 	err := repoDep.DB.QueryRow(getTransactionByIDQuery, transactionID).Scan(
@@ -331,10 +331,10 @@ func (repoDep *WalletRepo) GetTransactionByID(transactionID uuid.UUID) (*Transac
 		&transaction.CreatedAt,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch transaction: %v", err)
+		return Transaction{}, fmt.Errorf("failed to fetch transaction: %v", err)
 	}
 
-	return &transaction, nil
+	return transaction, nil
 }
 
 // Transaction represents a row in the transactions table
@@ -351,12 +351,7 @@ type Transaction struct {
 }
 
 // AddTransaction inserts a new transaction into the transactions table and returns the inserted data.
-func (repoDep *WalletRepo) AddTransaction(
-	transactionID uuid.UUID, senderWalletID, receiverWalletID string,
-	amount *big.Float,
-	transactionType, status, transactionHash string,
-	fee *big.Float,
-) (*Transaction, error) {
+func (repoDep *WalletRepo) AddTransaction(transactionID uuid.UUID, senderWalletID, receiverWalletID string, amount *big.Float, transactionType, status, transactionHash string, fee *big.Float) (Transaction, error) {
 	log.Println("Inserting new transaction into the database...")
 
 	// Convert big.Float to float64 for database insertion
@@ -377,14 +372,14 @@ func (repoDep *WalletRepo) AddTransaction(
 	)
 	if err != nil {
 		log.Printf("Error inserting transaction: %v", err)
-		return nil, fmt.Errorf("failed to insert transaction: %v", err)
+		return Transaction{}, fmt.Errorf("failed to insert transaction: %v", err)
 	}
 
 	// Fetch the inserted transaction data
 	insertedTransaction, err := repoDep.GetTransactionByID(transactionID)
 	if err != nil {
 		log.Printf("Error fetching inserted transaction: %v", err)
-		return nil, fmt.Errorf("failed to fetch inserted transaction: %v", err)
+		return Transaction{}, fmt.Errorf("failed to fetch inserted transaction: %v", err)
 	}
 
 	log.Println("Transaction inserted successfully")
@@ -473,8 +468,6 @@ func (repo *WalletRepo) GetTransactions(
 
 	query += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", argIndex, argIndex+1)
 	args = append(args, limit, offset)
-
-	log.Println("Query:",query)
 	rows, err := repo.DB.Query(query, args...)
 	if err != nil {
 		log.Printf("Error fetching transactions: %v", err)

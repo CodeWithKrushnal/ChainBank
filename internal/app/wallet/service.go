@@ -16,6 +16,7 @@ import (
 
 	"github.com/CodeWithKrushnal/ChainBank/internal/app/ethereum"
 	"github.com/CodeWithKrushnal/ChainBank/internal/repo"
+	"github.com/CodeWithKrushnal/ChainBank/utils"
 )
 
 type service struct {
@@ -44,7 +45,7 @@ type Service interface {
 		amount *big.Float,
 		transactionType, status, transactionHash string,
 		fee *big.Float,
-	) (*repo.Transaction, error)
+	) (repo.Transaction, error)
 	FetchTransactions(
 		ctx context.Context,
 		transactionID uuid.UUID,
@@ -56,6 +57,7 @@ type Service interface {
 		page int,
 		limit int,
 	) ([]repo.Transaction, error)
+	GetUserByID(ctx context.Context, userID string) (utils.User, error)
 }
 
 // Constructor function
@@ -141,7 +143,7 @@ func (sd service) AddTransaction(
 	amount *big.Float,
 	transactionType, status, transactionHash string,
 	fee *big.Float,
-) (*repo.Transaction, error) {
+) (repo.Transaction, error) {
 	// Call the repository method to add the transaction
 	insertedTransaction, err := sd.walletRepo.AddTransaction(
 		transactionID,
@@ -154,7 +156,7 @@ func (sd service) AddTransaction(
 		fee,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to add transaction: %w", err)
+		return repo.Transaction{}, fmt.Errorf("failed to add transaction: %w", err)
 	}
 
 	return insertedTransaction, nil
@@ -171,7 +173,7 @@ func (sd service) TransferFunds(ctx context.Context, userInfo struct {
 		return "", nil, fmt.Errorf("sender wallet not found")
 	}
 
-	recipientWalletID, err := sd.walletRepo.GetWalletID(req.RecipientEmail,"")
+	recipientWalletID, err := sd.walletRepo.GetWalletID(req.RecipientEmail, "")
 
 	if err != nil {
 		return "", nil, fmt.Errorf("recipient wallet not found")
@@ -328,4 +330,16 @@ func (sd service) FetchTransactions(
 		return nil, fmt.Errorf("failed to fetch transactions: %w", err)
 	}
 	return transactions, nil
+}
+
+func (sd service) GetUserByID(ctx context.Context, userID string) (utils.User, error) {
+	detailedUser, err := sd.userRepo.GetuserByID(ctx, userID)
+	if err != nil {
+		return utils.User{}, fmt.Errorf("Error Fetching the User from DB", err.Error())
+	}
+	role, err := sd.userRepo.GetUserHighestRole(ctx, userID)
+	if err != nil {
+		return utils.User{}, fmt.Errorf("Error Etching the role from DB", err.Error())
+	}
+	return utils.User{UserID: detailedUser.ID, UserEmail: detailedUser.Email, UserRole: role}, nil
 }
