@@ -1,0 +1,4 @@
+.vscode/
+.VSCodeCounter/
+wallets/
+cmd/app.env
