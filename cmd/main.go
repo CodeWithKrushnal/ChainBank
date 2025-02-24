@@ -7,19 +7,33 @@ import (
 
 	"github.com/CodeWithKrushnal/ChainBank/internal/app"
 	"github.com/CodeWithKrushnal/ChainBank/internal/config"
+	"github.com/CodeWithKrushnal/ChainBank/utils"
+	"golang.org/x/exp/slog"
 )
 
+// main initializes the application and starts the HTTP server.
 func main() {
 	// Config Setup
 	ctx := context.Background()
-	postgresDB, ethClient := config.InitConfig(ctx)
+	postgresDB, ethClient, err := config.InitConfig(ctx)
+	if err != nil {
+		slog.Error(utils.ErrServiceInit.Error(), "error", err)
+		return
+	}
+	defer func() {
+		if err := config.ReleaseConfig(ctx, postgresDB); err != nil {
+			slog.Error("Error releasing configuration", "error", err)
+		}
+	}()
 
-	defer config.ReleaseConfig(ctx, postgresDB)
-
-	deps := app.NewDependencies(ctx, postgresDB, ethClient)
+	deps, err := app.NewDependencies(ctx, postgresDB, ethClient)
+	if err != nil {
+		slog.Error(utils.ErrServiceInit.Error(), "error", err)
+		return
+	}
 
 	router := app.SetupRoutes(ctx, deps)
-	log.Println("Server started on port 8080")
+	slog.Info(utils.ServerStartLog)
 	log.Fatal(http.ListenAndServe(":8080", router))
 }
 
@@ -63,3 +77,10 @@ func main() {
 
 // 	repo.InsertPrivateKey(savedUser.ID, walletAddress, privateKeyHex)
 // }
+
+// Add Necessary comments,  logs - use const strings use slog use standerd error and message strings and define them, in case of errors propogate error by returning do not log errors. Remove unnecessary, redundent logs
+
+
+// Add Necessary comments,  logs - use const strings use slog use standerd error and message strings and define them, in case of errors log the received errors from the called functions. Remove unnecessary, redundent logs
+
+

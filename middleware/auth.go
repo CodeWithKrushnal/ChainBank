@@ -1,9 +1,11 @@
 package middleware
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -57,11 +59,8 @@ func AuthMiddleware(authDep Handler) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
-			// Allow signup and login without authentication
-			if r.URL.Path == "/signup" || r.URL.Path == "/signin" {
-				next.ServeHTTP(w, r)
-				return
-			}
+
+			requestID := ctx.Value("RequestID").(string)
 
 			// Get token from Authorization header
 			authHeader := r.Header.Get("Authorization")
@@ -91,7 +90,6 @@ func AuthMiddleware(authDep Handler) func(http.Handler) http.Handler {
 				http.Error(w, "User not found", http.StatusUnauthorized)
 				return
 			}
-
 			// Add user info to request context
 			ctx = context.WithValue(r.Context(), "UserID", user.ID)
 
@@ -99,6 +97,35 @@ func AuthMiddleware(authDep Handler) func(http.Handler) http.Handler {
 			err = authDep.service.updateLastLogin(ctx, user.ID)
 			if err != nil {
 				log.Println("Error Updating the Login Info", err.Error())
+				return
+			}
+
+			// Get IP address without port number and handle IPv6
+			ipAddress := r.RemoteAddr
+			ipAddress = strings.TrimPrefix(ipAddress, "[") // Remove leading bracket for IPv6
+			if i := strings.LastIndex(ipAddress, ":"); i != -1 {
+				ipAddress = ipAddress[:i]
+			}
+			ipAddress = strings.TrimSuffix(ipAddress, "]") // Remove trailing bracket for IPv6
+
+			// Convert IPv6 localhost to IPv4 localhost if needed
+			if ipAddress == "::1" {
+				ipAddress = "127.0.0.1"
+			}
+
+			// Read the request body
+			requestBody, err := io.ReadAll(r.Body)
+			if err != nil {
+				log.Println("Error reading request body", err.Error())
+				http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+				return
+			}
+			// Restore the request body so it can be read again later
+			r.Body = io.NopCloser(bytes.NewBuffer(requestBody))
+
+			receivedRequestID, err := authDep.service.CreateRequestLog(ctx, requestID, user.ID, r.RequestURI, r.Method, requestBody, ipAddress)
+			if err != nil || receivedRequestID != requestID || receivedRequestID == "" {
+				log.Println("Error Creating the Request Log", err.Error())
 				return
 			}
 

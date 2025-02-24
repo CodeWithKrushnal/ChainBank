@@ -3,7 +3,7 @@ package config
 import (
 	"context"
 	"database/sql"
-	"log"
+	"fmt"
 	"strings"
 
 	"crypto/ecdsa"
@@ -11,6 +11,7 @@ import (
 
 	"github.com/CodeWithKrushnal/ChainBank/internal/app/ethereum"
 	"github.com/CodeWithKrushnal/ChainBank/internal/repo"
+	"github.com/CodeWithKrushnal/ChainBank/utils"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/spf13/viper"
@@ -36,42 +37,41 @@ type Dependencies struct {
 }
 
 // Inintialize all Configurations for the Server
-func InitConfig(ctx context.Context) (*sql.DB, *ethclient.Client) {
-
+func InitConfig(ctx context.Context) (*sql.DB, *ethclient.Client, error) {
+	// Load configuration from environment variables or file
 	ConfigDetails, err := LoadConfig("")
 	if err != nil {
-		log.Fatal(err.Error())
+		return nil, nil, fmt.Errorf("%w: %v", utils.ErrConfigInit, err)
 	}
 
-	if len(ConfigDetails.DatabaseURL) == 0 || len(ConfigDetails.DatabasePassword) == 0 || len(ConfigDetails.DatabaseUsername) == 0 || len(ConfigDetails.EthereumRPC) == 0 || len(ConfigDetails.JWTSecretKey) == 0 || len(ConfigDetails.JWTResetSecretKey) == 0 || len(ConfigDetails.SuperUserEmail) == 0 || len(ConfigDetails.SuperUserPassword) == 0 {
-		log.Fatal("Missing Environment variable or file")
+	// Check for missing required configuration values
+	if len(ConfigDetails.DatabaseURL) == 0 || len(ConfigDetails.DatabasePassword) == 0 ||
+		len(ConfigDetails.DatabaseUsername) == 0 || len(ConfigDetails.EthereumRPC) == 0 ||
+		len(ConfigDetails.JWTSecretKey) == 0 || len(ConfigDetails.JWTResetSecretKey) == 0 ||
+		len(ConfigDetails.SuperUserEmail) == 0 || len(ConfigDetails.SuperUserPassword) == 0 {
+		return nil, nil, fmt.Errorf("%w: missing environment variable or file", utils.ErrConfigInit)
 	}
 
-	log.Println("Environment Variables Loaded Successfully")
-
-	//Start DB Connection
+	// Start DB Connection
 	ConfigDetails.DatabaseURL = strings.Replace(ConfigDetails.DatabaseURL, "user", ConfigDetails.DatabaseUsername, 1)
 	ConfigDetails.DatabaseURL = strings.Replace(ConfigDetails.DatabaseURL, "password", ConfigDetails.DatabasePassword, 1)
 
 	postgresDB, err := repo.InitDB(ConfigDetails.DatabaseURL)
-
 	if err != nil {
-		log.Fatalf("Failed to connect to database: %v", err)
+		return nil, nil, fmt.Errorf("%w: failed to connect to database", utils.ErrConfigInit)
 	}
 
-	//Initialize Ethereum Client
+	// Initialize Ethereum Client
 	ethClient, err := ethereum.InitEthereumClient(ConfigDetails.EthereumRPC)
 	if err != nil {
-		log.Fatalf("Error Connecting to Ethereum RPC Sever : %v", err.Error())
+		return nil, nil, fmt.Errorf("%w: error connecting to Ethereum RPC server", utils.ErrConfigInit)
 	}
 
-	//Creating Superuser
-	// CreateSuperUser()
-	return postgresDB, ethClient
+	return postgresDB, ethClient, nil
 }
 
-func ReleaseConfig(ctx context.Context, db *sql.DB) {
-	repo.CloseDB(db)
+func ReleaseConfig(ctx context.Context, db *sql.DB) error {
+	return repo.CloseDB(db)
 }
 
 func PrivateKeyToHex(privateKey *ecdsa.PrivateKey) string {

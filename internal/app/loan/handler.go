@@ -2,10 +2,10 @@ package loan
 
 import (
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 
-	"github.com/CodeWithKrushnal/ChainBank/internal/repo"
+	"github.com/CodeWithKrushnal/ChainBank/utils"
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 )
@@ -38,199 +38,217 @@ type LoanOfferPayload struct {
 // Create Loan New Application Handler
 func (hd Handler) CreateLoanApplicationHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	log.Println("Incoming application On CreateLoanapplicationHandler")
 
 	// Extract user info from context
-	UserID, ok := ctx.Value("UserID").(string)
+	UserID, ok := ctx.Value(utils.CtxUserID).(string)
 	if !ok {
-		http.Error(w, "Unauthorized: user info not found in context", http.StatusUnauthorized)
+		slog.Error(utils.ErrUnauthorized.Error(), "error", utils.ErrUnauthorized)
+		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
 		return
 	}
 
 	// Decode application body
 	var payload LoanApplicationPayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "Invalid request payload", http.StatusBadRequest)
+		slog.Error(utils.ErrInvalidRequestPayload.Error(), "error", err)
+		http.Error(w, utils.ErrInvalidRequestPayload.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Validate request data
 	if payload.Amount <= 0 {
-		http.Error(w, "Amount must be greater than zero", http.StatusBadRequest)
+		slog.Error(utils.ErrInvalidAmount.Error(), "error", utils.ErrInvalidAmount)
+		http.Error(w, utils.ErrInvalidAmount.Error(), http.StatusBadRequest)
 		return
 	}
 	if payload.InterestRate <= 0 {
-		http.Error(w, "Interest rate must be greater than zero", http.StatusBadRequest)
+		slog.Error(utils.ErrInvalidInterestRate.Error(), "error", utils.ErrInvalidInterestRate)
+		http.Error(w, utils.ErrInvalidInterestRate.Error(), http.StatusBadRequest)
 		return
 	}
 	if payload.TermMonths <= 0 {
-		http.Error(w, "Term months must be greater than zero", http.StatusBadRequest)
+		slog.Error(utils.ErrInvalidTermMonths.Error(), "error", utils.ErrInvalidTermMonths)
+		http.Error(w, utils.ErrInvalidTermMonths.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Call the service to create loan application
 	loanapplication, err := hd.Service.CreateLoanapplication(ctx, UserID, payload.Amount, payload.InterestRate, payload.TermMonths)
 	if err != nil {
-		http.Error(w, "Failed to create loan application", http.StatusInternalServerError)
+		slog.Error(utils.ErrCreateLoanApplication.Error(), "error", err)
+		http.Error(w, utils.ErrCreateLoanApplication.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Return response
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(loanapplication)
+	if err := json.NewEncoder(w).Encode(loanapplication); err != nil {
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
+	}
 }
 
-// Get Loan Application with Application ID
+// GetLoanApplicationByIDHandler retrieves a loan application by its application ID.
 func (hd Handler) GetLoanApplicationByIDHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Extract application_id from path parameters
 	vars := mux.Vars(r)
-	applicationIDStr, exists := vars["application_id"]
+	applicationIDStr, exists := vars[utils.ApplicationID]
 	if !exists || applicationIDStr == "" {
-		http.Error(w, "application_id is required", http.StatusBadRequest)
+		http.Error(w, utils.ErrInvalidApplicationID.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Validate UUID format
-	_, err := uuid.Parse(applicationIDStr)
-	if err != nil {
-		http.Error(w, "invalid application_id format", http.StatusBadRequest)
+	if _, err := uuid.Parse(applicationIDStr); err != nil {
+		http.Error(w, utils.ErrInvalidApplicationID.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Fetch loan application details
 	loanApplications, err := hd.Service.GetLoanapplications(ctx, applicationIDStr, "", "")
 	if err != nil {
-		log.Printf("Error fetching loan applications: %v", err)
-		http.Error(w, "failed to fetch loan application", http.StatusInternalServerError)
+		slog.Error(utils.ErrRetrievingApplication.Error(), "error", err)
+		http.Error(w, utils.ErrRetrievingApplication.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Check if no loan applications found
 	if len(loanApplications) == 0 {
-		http.Error(w, "no loan application found", http.StatusNotFound)
+		http.Error(w, utils.ErrNoLoanApplicationFound.Error(), http.StatusNotFound)
 		return
 	}
 
 	// Respond with JSON data
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(loanApplications); err != nil {
-		log.Printf("Error encoding response: %v", err)
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
 
-// Get Loan Appliactions with borrowerID and status
+// GetLoanApplicationsHandler retrieves loan applications based on borrowerID and status.
 func (hd Handler) GetLoanAppliactionsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	log.Println("Incoming request On GetLoanAppliactionsHandler")
+	slog.Info(utils.LogRetrievingLoanApplications)
 
 	// Extract user info from context
-	UserID, ok := ctx.Value("UserID").(string)
+	UserID, ok := ctx.Value(utils.CtxUserID).(string)
 	if !ok {
-		http.Error(w, "Unauthorized: user info not found in context", http.StatusUnauthorized)
+		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
 		return
 	}
 
+	// Fetch user information from the database
 	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
-
 	if err != nil {
-		http.Error(w, "Error Retriving the user from DB", http.StatusInternalServerError)
+		slog.Error(utils.ErrRetrievingUser.Error(), "error", err)
+		http.Error(w, utils.ErrRetrievingUser.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Extract query parameters
 	query := r.URL.Query()
-	borrowerID := query.Get("user_id")
-	status := query.Get("status")
+	borrowerID := query.Get(utils.RequestUserID)
+	status := query.Get(utils.Status)
 
 	// Authorization check: Non-admin users cannot access other user's data
 	if borrowerID != "" && userInfo.UserRole != 3 && borrowerID != userInfo.UserID {
-		http.Error(w, "Non Admin Roles Cannot Access other user's info", http.StatusUnauthorized)
+		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
 		return
-	} else if borrowerID == "" && status != "open" && userInfo.UserRole != 3 {
-		http.Error(w, "Non Admin roles cannot access closed applications", http.StatusUnauthorized)
+	} else if borrowerID == "" && status != utils.StatusOpen && userInfo.UserRole != 3 {
+		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
 		return
 	}
 
-	// Fetch loan applications based on query params
+	// Fetch loan applications based on query parameters
 	loanApplications, err := hd.Service.GetLoanapplications(ctx, "", borrowerID, status)
 	if err != nil {
-		log.Printf("Error fetching loan applications: %v", err)
-		http.Error(w, "failed to fetch loan application", http.StatusInternalServerError)
+		slog.Error(utils.ErrFailedToFetchLoanApplications.Error(), "error", err)
+		http.Error(w, utils.ErrFailedToFetchLoanApplications.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Check if no loan applications found
 	if len(loanApplications) == 0 {
-		http.Error(w, "no loan application found", http.StatusNotFound)
+		http.Error(w, utils.ErrNoLoanApplicationFound.Error(), http.StatusNotFound)
 		return
 	}
 
 	// Respond with JSON data
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(loanApplications); err != nil {
-		log.Printf("Error encoding response: %v", err)
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
 
 // Create Loan Offer Handler
 func (hd Handler) CreateLoanOfferHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	log.Println("Incoming request on CreateLoanOfferHandler")
+	slog.Info(utils.LogAcceptingLoanOffer) // Log the incoming request
 
 	// Extract UserID from context
-	UserID, ok := ctx.Value("UserID").(string)
+	UserID, ok := ctx.Value(utils.CtxUserID).(string)
 	if !ok || UserID == "" {
-		http.Error(w, "Unauthorized: user info not found in context", http.StatusUnauthorized)
+		slog.Error(utils.ErrUnauthorized.Error()) // Log unauthorized access
+		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
 		return
 	}
 
 	// Extract application_id from path parameters
 	vars := mux.Vars(r)
-	applicationID, err := uuid.Parse(vars["application_id"])
+	applicationID, err := uuid.Parse(vars[utils.ApplicationID])
 	if err != nil {
-		http.Error(w, "Invalid application_id: must be a valid UUID", http.StatusBadRequest)
+		slog.Error(utils.ErrInvalidApplicationID.Error(), "error", err) // Log the error
+		http.Error(w, utils.ErrInvalidApplicationID.Error(), http.StatusBadRequest)
 		return
 	}
 
 	var payload LoanOfferPayload
 	// Parse request body
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		http.Error(w, "Invalid request body: JSON decoding failed", http.StatusBadRequest)
+		slog.Error(utils.ErrInvalidRequestPayload.Error(), "error", err) // Log the error
+		http.Error(w, utils.ErrInvalidRequestPayload.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Validate request fields
 	if payload.Amount <= 0 {
-		http.Error(w, "Invalid amount: must be greater than zero", http.StatusBadRequest)
+		slog.Error(utils.ErrInvalidAmount.Error(), "error", utils.ErrInvalidAmount) // Log the error
+		http.Error(w, utils.ErrInvalidAmount.Error(), http.StatusBadRequest)
 		return
 	}
 	if payload.InterestRate <= 0 {
-		http.Error(w, "Invalid interest_rate: must be greater than zero", http.StatusBadRequest)
+		slog.Error(utils.ErrInvalidInterestRate.Error(), "error", utils.ErrInvalidInterestRate) // Log the error
+		http.Error(w, utils.ErrInvalidInterestRate.Error(), http.StatusBadRequest)
 		return
 	}
 	if payload.Duration <= 0 {
-		http.Error(w, "Invalid duration: must be a positive integer", http.StatusBadRequest)
+		slog.Error(utils.ErrInvalidDuration.Error(), "error", utils.ErrInvalidDuration) // Log the error
+		http.Error(w, utils.ErrInvalidDuration.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Call service layer to create the loan offer
 	loanOffer, err := hd.Service.CreateLoanOffer(ctx, UserID, payload.Amount, payload.InterestRate, payload.Duration, applicationID.String())
 	if err != nil {
-		http.Error(w, "Failed to create loan offer: "+err.Error(), http.StatusInternalServerError)
+		slog.Error(utils.ErrCreateLoanOffer.Error(), "error", err) // Log the error
+		http.Error(w, utils.ErrCreateLoanOffer.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Respond with the created loan offer
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(loanOffer)
+	if err := json.NewEncoder(w).Encode(loanOffer); err != nil {
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err) // Log the error
+		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
+	}
 }
 
 // Get Loan Offers with Offer ID
@@ -239,386 +257,416 @@ func (hd Handler) GetLoanOfferByIDHandler(w http.ResponseWriter, r *http.Request
 
 	// Extract application_id from path parameters
 	vars := mux.Vars(r)
-	offerIDStr, exists := vars["offer_id"]
+	offerIDStr, exists := vars[utils.OfferID]
 	if !exists || offerIDStr == "" {
-		http.Error(w, "offer_id is required", http.StatusBadRequest)
+		http.Error(w, utils.ErrInvalidOfferID.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Validate UUID format
 	_, err := uuid.Parse(offerIDStr)
 	if err != nil {
-		http.Error(w, "invalid offer_id format", http.StatusBadRequest)
+		http.Error(w, utils.ErrInvalidOfferID.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Fetch loan application details
 	loanApplications, err := hd.Service.GetLoanOffers(ctx, offerIDStr, "", "", "")
 	if err != nil {
-		log.Printf("Error fetching loan offers: %v", err)
-		http.Error(w, "failed to fetch loan offer", http.StatusInternalServerError)
+		slog.Error(utils.ErrFailedToFetchLoanOffers.Error(), "error", err)
+		http.Error(w, utils.ErrFailedToFetchLoanOffers.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Check if no loan applications found
 	if len(loanApplications) == 0 {
-		http.Error(w, "no loan offer found", http.StatusNotFound)
+		http.Error(w, utils.ErrNoLoanOfferFound.Error(), http.StatusNotFound)
 		return
 	}
 
 	// Respond with JSON data
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(loanApplications); err != nil {
-		log.Printf("Error encoding response: %v", err)
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
 
-// Get Loan Offer by application ID Handler
+// GetOffersByApplicationIDHandler retrieves loan offers based on the provided application ID.
 func (hd Handler) GetOffersByApplicationIDHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	log.Println("Incoming request on CreateLoanOfferHandler")
+	slog.Info(utils.LogRetrievingOffersFromApplicationID)
 
 	// Extract UserID from context
-	UserID, ok := ctx.Value("UserID").(string)
+	UserID, ok := ctx.Value(utils.CtxUserID).(string)
 	if !ok || UserID == "" {
-		http.Error(w, "Unauthorized: user info not found in context", http.StatusUnauthorized)
+		slog.Error(utils.ErrUnauthorized.Error())
+		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
 		return
 	}
 
 	// Extract application_id from path parameters
 	vars := mux.Vars(r)
-	applicationID, err := uuid.Parse(vars["application_id"])
+	applicationID, err := uuid.Parse(vars[utils.ApplicationID])
 	if err != nil {
-		http.Error(w, "Invalid application_id: must be a valid UUID", http.StatusBadRequest)
+		slog.Error(utils.ErrInvalidApplicationID.Error(), "error", err)
+		http.Error(w, utils.ErrInvalidApplicationID.Error(), http.StatusBadRequest)
 		return
 	}
 
+	// Fetch loan offers based on application ID
 	offer, err := hd.Service.GetLoanOffers(ctx, "", applicationID.String(), "", "")
-
 	if err != nil {
-		log.Println("Error Retrieving the offers from application ID ", err.Error())
-		http.Error(w, "Error Retrieving the offers from application ID", http.StatusInternalServerError)
+		slog.Error(utils.ErrRetrievingOffersFromApplicationID.Error(), "error", err)
+		http.Error(w, utils.ErrRetrievingOffersFromApplicationID.Error(), http.StatusInternalServerError)
 		return
 	}
-	// Respond with the created loan offer
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(offer)
+
+	// Respond with the retrieved loan offers
+	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
+	w.WriteHeader(http.StatusOK) // Changed to StatusOK for successful retrieval
+	if err := json.NewEncoder(w).Encode(offer); err != nil {
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
+	}
 }
 
-// Get Loan Appliactions with borrowerID and status
+// GetLoanOffersHandler retrieves loan offers based on query parameters.
 func (hd Handler) GetLoanOffersHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	log.Println("Incoming request On GetLoanAppliactionsHandler")
+	slog.Info(utils.LogRetrievingOffersFromOfferID)
 
-	// Extract user info from context
-	UserID, ok := ctx.Value("UserID").(string)
+	// Extract UserID from context
+	UserID, ok := ctx.Value(utils.CtxUserID).(string)
 	if !ok {
-		http.Error(w, "Unauthorized: user info not found in context", http.StatusUnauthorized)
+		slog.Error(utils.ErrUnauthorized.Error())
+		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
 		return
 	}
 
+	// Retrieve user information
 	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
-
 	if err != nil {
-		http.Error(w, "Error Retriving the user from DB", http.StatusInternalServerError)
+		slog.Error(utils.ErrRetrievingUser.Error(), "error", err)
+		http.Error(w, utils.ErrRetrievingUser.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Extract query parameters
+	// Extract query parameters for lenderID and status
 	query := r.URL.Query()
-	lenderID := query.Get("user_id")
-	status := query.Get("status")
+	lenderID := query.Get(utils.RequestUserID)
+	status := query.Get(utils.Status)
 
 	// Authorization check: Non-admin users cannot access other user's data
 	if lenderID != "" && userInfo.UserRole != 3 && lenderID != userInfo.UserID {
-		http.Error(w, "Non Admin Roles Cannot Access other user's info", http.StatusUnauthorized)
+		slog.Error(utils.ErrUnauthorized.Error())
+		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
 		return
-	} else if lenderID == "" && status != "Open" && userInfo.UserRole != 3 {
-		http.Error(w, "Non Admin roles cannot access closed offers", http.StatusUnauthorized)
+	} else if lenderID == "" && status != utils.StatusOpen && userInfo.UserRole != 3 {
+		slog.Error(utils.ErrUnauthorized.Error())
+		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
 		return
 	}
 
-	// Fetch loan offers based on query params
+	// Fetch loan offers based on query parameters
 	loanOffers, err := hd.Service.GetLoanOffers(ctx, "", "", lenderID, status)
 	if err != nil {
-		log.Printf("Error fetching loan offers: %v", err)
-		http.Error(w, "failed to fetch loan offers", http.StatusInternalServerError)
+		slog.Error(utils.ErrFailedToFetchLoanOffers.Error(), "error", err)
+		http.Error(w, utils.ErrFailedToFetchLoanOffers.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Check if no loan offers found
 	if len(loanOffers) == 0 {
-		http.Error(w, "no loan offer found", http.StatusNotFound)
+		slog.Warn(utils.ErrNoLoanOfferFound.Error())
+		http.Error(w, utils.ErrNoLoanOfferFound.Error(), http.StatusNotFound)
 		return
 	}
 
 	// Respond with JSON data
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(loanOffers); err != nil {
-		log.Printf("Error encoding response: %v", err)
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
 
 // AcceptOfferHandler handles the acceptance of a loan offer.
 func (hd Handler) AcceptOfferHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	log.Println("Incoming request On AcceptOfferHandler")
+	slog.Info(utils.LogAcceptingLoanOffer)
 
 	// Extract user info from context
-	UserID, ok := ctx.Value("UserID").(string)
+	UserID, ok := ctx.Value(utils.CtxUserID).(string)
 	if !ok {
-		http.Error(w, "Unauthorized: user info not found in context", http.StatusUnauthorized)
+		slog.Error(utils.ErrUnauthorized.Error())
+		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
 		return
 	}
 
-	// Extract application_id from path parameters
+	// Extract offerID from path parameters
 	vars := mux.Vars(r)
-	offerID, err := uuid.Parse(vars["offer_id"])
+	offerID, err := uuid.Parse(vars[utils.OfferID])
 	if err != nil {
-		http.Error(w, "Invalid offer_id: must be a valid UUID", http.StatusBadRequest)
+		slog.Error(utils.ErrInvalidOfferID.Error(), "error", err)
+		http.Error(w, utils.ErrInvalidOfferID.Error(), http.StatusBadRequest)
 		return
 	}
 
+	// Attempt to accept the loan offer
 	loan, err := hd.Service.AcceptOffer(ctx, offerID.String(), UserID)
-
 	if err != nil {
-		log.Println("Error Accepting Offer", err.Error())
-		http.Error(w, "Error Accepting Offer", http.StatusInternalServerError)
+		slog.Error(utils.ErrAcceptingOffer.Error(), "error", err)
+		http.Error(w, utils.ErrAcceptingOffer.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Respond with JSON data
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusAccepted)
 	if err := json.NewEncoder(w).Encode(loan); err != nil {
-		log.Printf("Error encoding response: %v", err)
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
 
 // DisburseLoanHandler handles the disbursement of a loan.
 func (hd Handler) DisburseLoanHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	log.Println("Incoming request On AcceptOfferHandler")
+	slog.Info(utils.LogDisbursingLoan)
 
 	// Extract user info from context
-	UserID, ok := ctx.Value("UserID").(string)
+	UserID, ok := ctx.Value(utils.CtxUserID).(string)
 	if !ok {
-		http.Error(w, "Unauthorized: user info not found in context", http.StatusUnauthorized)
+		slog.Error(utils.ErrUnauthorized.Error())
+		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
 		return
 	}
 
+	// Retrieve user information from the database
 	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
-
 	if err != nil {
-		http.Error(w, "Error Retriving the user from DB", http.StatusInternalServerError)
+		slog.Error(utils.ErrRetrievingUserByID.Error(), "error", err)
+		http.Error(w, utils.ErrRetrievingUserByID.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	// Extract application_id from path parameters
+	// Extract offerID from path parameters
 	vars := mux.Vars(r)
-	offerID, err := uuid.Parse(vars["offer_id"])
+	offerID, err := uuid.Parse(vars[utils.OfferID])
 	if err != nil {
-		http.Error(w, "Invalid offer_id: must be a valid UUID", http.StatusBadRequest)
+		slog.Error(utils.ErrInvalidOfferID.Error(), "error", err)
+		http.Error(w, utils.ErrInvalidOfferID.Error(), http.StatusBadRequest)
 		return
 	}
 
+	// Retrieve loan offers based on the offerID
 	offer, err := hd.Service.GetLoanOffers(ctx, offerID.String(), "", "", "")
-
 	if err != nil {
-		log.Println("Error Retrieving the offer from DB", err.Error())
-		http.Error(w, "Error Retrieving the offer from DB", http.StatusInternalServerError)
+		slog.Error(utils.ErrRetrievingOffersFromOfferID.Error(), "error", err)
+		http.Error(w, utils.ErrRetrievingOffersFromOfferID.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	if offer[0].Status != "Accepted" {
-		http.Error(w, "Offer is not accepted", http.StatusBadRequest)
+	// Check if the offer status is accepted
+	if len(offer) == 0 || offer[0].Status != utils.StatusApproved {
+		slog.Error(utils.ErrOfferNotAccepted.Error())
+		http.Error(w, utils.ErrOfferNotAccepted.Error(), http.StatusBadRequest)
 		return
 	}
 
+	// Verify that the user is the lender of the offer
 	if offer[0].LenderID.String() != userInfo.UserID {
-		http.Error(w, "You are not the lender of this offer", http.StatusBadRequest)
+		slog.Error(utils.ErrNotLender.Error())
+		http.Error(w, utils.ErrNotLender.Error(), http.StatusBadRequest)
 		return
 	}
 
+	// Attempt to disburse the loan
 	loan, err := hd.Service.DisburseLoan(ctx, userInfo.UserID, offerID.String())
-
 	if err != nil {
-		log.Println("Error Disbursing the loan", err.Error())
-		http.Error(w, "Error Disbursing the loan", http.StatusInternalServerError)
+		slog.Error(utils.ErrDisbursingLoan.Error(), "error", err)
+		http.Error(w, utils.ErrDisbursingLoan.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Respond with JSON data
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusAccepted)
 	if err := json.NewEncoder(w).Encode(loan); err != nil {
-		log.Printf("Error encoding response: %v", err)
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
 
 // GetLoanDetailsHandler handles the retrieval of loan details by loan ID.
 func (hd *Handler) GetLoanDetailsByIDHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	log.Println("Incoming request On GetLoanDetailsHandler")
+	slog.Info(utils.LogRetrievingLoanDetailsByID)
 
 	// Extract user info from context
-	userID, ok := ctx.Value("UserID").(string)
+	UserID, ok := ctx.Value(utils.CtxUserID).(string)
 	if !ok {
-		http.Error(w, "Unauthorized: user info not found in context", http.StatusUnauthorized)
+		slog.Error(utils.ErrUnauthorized.Error())
+		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
 		return
 	}
 
-	userInfo, err := hd.Service.GetUserByID(ctx, userID)
-
+	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
 	if err != nil {
-		http.Error(w, "Error Retriving the user from DB", http.StatusInternalServerError)
+		slog.Error(utils.ErrRetrievingUser.Error(), "error", err)
+		http.Error(w, utils.ErrRetrievingUser.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Extract loan_id from path parameters
 	vars := mux.Vars(r)
-	loanID := vars["loan_id"]
+	loanID := vars[utils.LoanID]
 
 	// Validate loan ID
 	if loanID == "" {
-		http.Error(w, "Loan ID is required", http.StatusBadRequest)
+		slog.Error(utils.ErrInvalidLoanID.Error())
+		http.Error(w, utils.ErrInvalidLoanID.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Fetch loan details using the service
 	loanDetails, err := hd.Service.GetLoanDetails(ctx, loanID, "", "", "", "", "")
 	if err != nil {
-		log.Println("Error retrieving loan details from DB", err.Error())
-		http.Error(w, "Error retrieving loan details from DB", http.StatusInternalServerError)
+		slog.Error(utils.ErrRetrievingLoanDetails.Error(), "error", err)
+		http.Error(w, utils.ErrRetrievingLoanDetails.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Check if loan details were found
 	if len(loanDetails) == 0 {
-		http.Error(w, "No loan found with the provided ID", http.StatusNotFound)
+		slog.Error(utils.ErrNoLoanFound.Error())
+		http.Error(w, utils.ErrNoLoanFound.Error(), http.StatusNotFound)
 		return
 	}
 
-	log.Println("userInfo", userInfo)
+	slog.Info(utils.LogLoanDetailsByIDRetrievedSuccessfully)
 	if loanDetails[0].BorrowerID != userInfo.UserID && loanDetails[0].LenderID != userInfo.UserID && userInfo.UserRole != 3 {
-		http.Error(w, "You are not authorized to access this loan", http.StatusUnauthorized)
+		slog.Error(utils.ErrUnauthorized.Error())
+		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
 		return
 	}
 
 	// Respond with JSON data
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(loanDetails[0]); err != nil {
-		log.Printf("Error encoding response: %v", err)
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
 
 // GetLoanDetailsHandler handles the retrieval of loan details based on various parameters.
 func (hd *Handler) GetLoanDetailsHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	log.Println("Incoming request On GetLoanDetailsHandler")
+	slog.Info(utils.LogRetrievingLoanDetails) // Log the incoming request
 
 	// Extract user info from context
-	userID, ok := ctx.Value("UserID").(string)
+	userID, ok := ctx.Value(utils.CtxUserID).(string)
 	if !ok {
-		http.Error(w, "Unauthorized: user info not found in context", http.StatusUnauthorized)
+		slog.Error(utils.ErrRetrievingUser.Error())
+		http.Error(w, utils.ErrRetrievingUser.Error(), http.StatusUnauthorized)
 		return
 	}
 
+	// Fetch user information from the service
 	userInfo, err := hd.Service.GetUserByID(ctx, userID)
 	if err != nil {
-		http.Error(w, "Error Retriving the user from DB", http.StatusInternalServerError)
+		slog.Error(utils.ErrRetrievingUserByID.Error(), "error", err)
+		http.Error(w, utils.ErrRetrievingUserByID.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Extract parameters from query
 	query := r.URL.Query()
-	offerID := query.Get("offer_id")
-	applicationID := query.Get("application_id")
-	borrowerID := query.Get("borrower_id")
-	lenderID := query.Get("lender_id")
-	status := query.Get("status")
+	offerID := query.Get(utils.LoanOfferID)
+	applicationID := query.Get(utils.LoanApplicationID)
+	borrowerID := query.Get(utils.BorrowerID)
+	lenderID := query.Get(utils.LenderID)
+	status := query.Get(utils.Status)
 
-	// Fetch loan details based on offerID or applicationID
-	var loanDetails []repo.Loan
-
-	if offerID != "" || applicationID != "" || borrowerID != "" || lenderID != "" || status != "" {
-		loanDetails, err = hd.Service.GetLoanDetails(ctx, "", offerID, borrowerID, lenderID, status, applicationID)
-	} else {
-		http.Error(w, "Either offerID or applicationID or borrowerID or lenderID or status is required", http.StatusBadRequest)
+	// Validate that at least one parameter is provided
+	if offerID == "" && applicationID == "" && borrowerID == "" && lenderID == "" && status == "" {
+		slog.Error(utils.ErrMissingParameters.Error()) // Use standard error message
+		http.Error(w, utils.ErrMissingParameters.Error(), http.StatusBadRequest)
 		return
 	}
 
+	// Fetch loan details based on provided parameters
+	loanDetails, err := hd.Service.GetLoanDetails(ctx, "", offerID, borrowerID, lenderID, status, applicationID)
 	if err != nil {
-		log.Println("Error retrieving loan details from DB", err.Error())
-		http.Error(w, "Error retrieving loan details from DB", http.StatusInternalServerError)
+		slog.Error(utils.ErrRetrievingLoanDetails.Error(), "error", err)
+		http.Error(w, utils.ErrRetrievingLoanDetails.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Check if loan details were found
 	if len(loanDetails) == 0 {
-		http.Error(w, "No loan found with the provided parameters", http.StatusNotFound)
+		slog.Error(utils.ErrNoLoanFound.Error())
+		http.Error(w, utils.ErrNoLoanFound.Error(), http.StatusNotFound)
 		return
 	}
 
 	// Check authorization based on userID and roles
 	if loanDetails[0].BorrowerID != userID && loanDetails[0].LenderID != userID && userInfo.UserRole != 3 {
-		http.Error(w, "You are not authorized to access this loan", http.StatusUnauthorized)
+		slog.Error(utils.ErrUnauthorized.Error())
+		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
 		return
 	}
 
 	// Respond with JSON data
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(loanDetails[0]); err != nil {
-		log.Printf("Error encoding response: %v", err)
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
 
-// HandleCalculatePayable handles the request to calculate the total payable amount for a loan.
+// CalculatePayableHandler handles the request to calculate the total payable amount for a loan.
 func (hd *Handler) CalculatePayableHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Extract userID from context (assuming it's set during authentication)
-	userID, ok := ctx.Value("UserID").(string)
+	userID, ok := ctx.Value(utils.CtxUserID).(string)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		slog.Error(utils.ErrUnauthorized.Error())
+		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
 		return
 	}
 
 	// Extract loan_id from URL path parameters
 	vars := mux.Vars(r)
-	loanID := vars["loan_id"]
+	loanID := vars[utils.LoanID]
 
 	// Validate loanID
 	if loanID == "" {
-		http.Error(w, "loan_id is required", http.StatusBadRequest)
+		slog.Error(utils.ErrInvalidLoanID.Error())
+		http.Error(w, utils.ErrInvalidLoanID.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Calculate total payable amount
 	payableBreakdown, err := hd.Service.CalculateTotalPayable(ctx, loanID, userID)
 	if err != nil {
-		log.Println("Error calculating total payable amount:", err.Error())
-		http.Error(w, "Error calculating total payable amount", http.StatusInternalServerError)
+		slog.Error(utils.ErrCalculatingTotalPayable.Error(), "error", err)
+		http.Error(w, utils.ErrCalculatingTotalPayable.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Respond with JSON data
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(payableBreakdown); err != nil {
-		log.Printf("Error encoding response: %v", err)
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
 
@@ -627,40 +675,43 @@ func (hd *Handler) SettleLoanHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
 	// Extract userID from context (assuming it's set during authentication)
-	userID, ok := ctx.Value("UserID").(string)
+	userID, ok := ctx.Value(utils.CtxUserID).(string)
 	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		slog.Error(utils.ErrUnauthorized.Error())
+		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
 		return
 	}
 
 	// Extract loan_id from URL path parameters
 	vars := mux.Vars(r)
-	loanID := vars["loan_id"]
+	loanID := vars[utils.LoanID]
 
 	// Validate loanID
 	if loanID == "" {
-		http.Error(w, "loan_id is required", http.StatusBadRequest)
+		slog.Error(utils.ErrInvalidLoanID.Error())
+		http.Error(w, utils.ErrInvalidLoanID.Error(), http.StatusBadRequest)
 		return
 	}
 
 	if _, err := uuid.Parse(loanID); err != nil {
-		http.Error(w, "Invalid loan_id format", http.StatusBadRequest)
+		slog.Error(utils.ErrInvalidLoanIDFormat.Error())
+		http.Error(w, utils.ErrInvalidLoanIDFormat.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Call the SettleLoan service function
 	settledLoan, err := hd.Service.SettleLoan(ctx, userID, loanID)
 	if err != nil {
-		log.Println("Error settling loan:", err.Error())
-		http.Error(w, "Error settling loan", http.StatusInternalServerError)
+		slog.Error(utils.ErrSettlingLoan.Error(), "error", err)
+		http.Error(w, utils.ErrSettlingLoan.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	// Respond with JSON data
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(settledLoan); err != nil {
-		log.Printf("Error encoding response: %v", err)
-		http.Error(w, "failed to encode response", http.StatusInternalServerError)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }

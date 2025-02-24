@@ -10,6 +10,7 @@ import (
 	"github.com/CodeWithKrushnal/ChainBank/internal/app/wallet"
 	"github.com/CodeWithKrushnal/ChainBank/internal/repo"
 	"github.com/CodeWithKrushnal/ChainBank/middleware"
+	"github.com/CodeWithKrushnal/ChainBank/utils"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
@@ -22,7 +23,8 @@ type Dependencies struct {
 }
 
 // NewDependencies initializes all dependencies
-func NewDependencies(ctx context.Context, db *sql.DB, ethClient *ethclient.Client) *Dependencies {
+// NewDependencies initializes all the necessary services and repositories for the application.
+func NewDependencies(ctx context.Context, db *sql.DB, ethClient *ethclient.Client) (*Dependencies, error) {
 	// Initialize repositories
 	userRepo := repo.NewUserRepo(db)
 	walletRepo := repo.NewWalletRepo(db)
@@ -35,11 +37,16 @@ func NewDependencies(ctx context.Context, db *sql.DB, ethClient *ethclient.Clien
 	loanService := loan.NewService(ctx, userRepo, walletRepo, loanRepo, ethRepo)
 	middlewareService := middleware.NewService(ctx, userRepo, walletRepo)
 
+	// Check if services are initialized correctly
+	if userService == nil || walletService == nil || loanService == nil || middlewareService == nil {
+		return nil, utils.ErrServiceInit // Propagate error if any service fails to initialize
+	}
+
 	// Return initialized dependencies
 	return &Dependencies{
 		UserService:       userService,
 		WalletService:     walletService,
 		LoanService:       loanService,
 		MiddlewareService: middlewareService,
-	}
+	}, nil
 }

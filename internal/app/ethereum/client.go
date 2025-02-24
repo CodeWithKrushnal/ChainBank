@@ -1,19 +1,24 @@
 package ethereum
 
 import (
+	"fmt"
+	"log/slog"
+
+	"github.com/CodeWithKrushnal/ChainBank/utils"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"log"
 )
 
 var EthereumClient *ethclient.Client
 
+// InitEthereumClient initializes the Ethereum client using the provided RPC URL.
+// It returns a pointer to the ethclient.Client instance and an error if any occurs.
 func InitEthereumClient(rpcURL string) (*ethclient.Client, error) {
 	client, err := ethclient.Dial(rpcURL)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%s: %w", utils.ErrEthereumClientInit, err)
 	}
 	EthereumClient = client
 
-	log.Printf("Ethereum Client Started on: %v", rpcURL)
+	slog.Info("Ethereum Client Started", "rpcURL", rpcURL)
 	return EthereumClient, nil
 }
