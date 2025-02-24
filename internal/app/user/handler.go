@@ -62,7 +62,7 @@ func (hd Handler) SignupHandler(w http.ResponseWriter, r *http.Request) {
 	var req SignupRequest
 	// Decode the request body into SignupRequest struct
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		slog.Error(utils.ErrRetrievingUserDetails.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingUserDetails.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrInvalidDuration.Error(), http.StatusBadRequest)
 		return
 	}
@@ -70,7 +70,7 @@ func (hd Handler) SignupHandler(w http.ResponseWriter, r *http.Request) {
 	// Create a new user account
 	walletAddress, err := hd.Service.CreateUserAccount(ctx, req)
 	if err != nil {
-		slog.Error(utils.ErrRetrievingUserByID.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingUserByID.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrRetrievingUserByID.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -82,7 +82,7 @@ func (hd Handler) SignupHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
@@ -98,7 +98,7 @@ func (hd Handler) SignInHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Decode the request body into Credentials struct
 	if err := json.NewDecoder(r.Body).Decode(&credentials); err != nil {
-		slog.Error(utils.ErrInvalidDuration.Error(), "error", err)
+		slog.Error(utils.ErrInvalidDuration.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrInvalidDuration.Error(), http.StatusBadRequest)
 		return
 	}
@@ -109,7 +109,7 @@ func (hd Handler) SignInHandler(w http.ResponseWriter, r *http.Request) {
 		Password string
 	}(credentials), originIP)
 	if err != nil {
-		slog.Error(utils.ErrRetrievingUserByID.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingUserByID.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrRetrievingUserByID.Error(), http.StatusUnauthorized)
 		return
 	}
@@ -117,7 +117,7 @@ func (hd Handler) SignInHandler(w http.ResponseWriter, r *http.Request) {
 	// Set the response header and encode the response
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	if err := json.NewEncoder(w).Encode(response); err != nil {
-		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
@@ -138,7 +138,7 @@ func (hd Handler) RequestKYCHandler(w http.ResponseWriter, r *http.Request) {
 	// Get user info from userID
 	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
 	if err != nil {
-		slog.Error(utils.ErrRetrievingUserByID.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingUserByID.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrRetrievingUserByID.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -146,7 +146,7 @@ func (hd Handler) RequestKYCHandler(w http.ResponseWriter, r *http.Request) {
 	// Define the request structure for KYC
 	var KYCRequest KYCRequest
 	if err := json.NewDecoder(r.Body).Decode(&KYCRequest); err != nil {
-		slog.Error(utils.ErrInvalidRequestPayload.Error(), "error", err)
+		slog.Error(utils.ErrInvalidRequestPayload.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrInvalidRequestPayload.Error(), http.StatusBadRequest)
 		return
 	}
@@ -154,7 +154,7 @@ func (hd Handler) RequestKYCHandler(w http.ResponseWriter, r *http.Request) {
 	slog.Info(utils.LogReceivedKYCRequest, "request", KYCRequest)
 	kycID, err := hd.Service.InsertKYCVerificationService(ctx, userInfo.UserEmail, KYCRequest.DocumentType, KYCRequest.DocumentNumber, "Pending")
 	if err != nil {
-		slog.Error(utils.ErrInsertingKYCVerification.Error(), "error", err)
+		slog.Error(utils.ErrInsertingKYCVerification.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrInsertingKYCVerification.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -162,7 +162,7 @@ func (hd Handler) RequestKYCHandler(w http.ResponseWriter, r *http.Request) {
 	// Set response header and encode the response
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	if err := json.NewEncoder(w).Encode(map[string]string{utils.KYCID: kycID}); err != nil {
-		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
@@ -183,7 +183,7 @@ func (hd Handler) GetKYCRequestsHandler(w http.ResponseWriter, r *http.Request) 
 	// Get user info from userID
 	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
 	if err != nil {
-		slog.Error(utils.ErrRetrievingUserByID.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingUserByID.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrRetrievingUserByID.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -198,7 +198,7 @@ func (hd Handler) GetKYCRequestsHandler(w http.ResponseWriter, r *http.Request) 
 	// Retrieve all KYC verification records
 	kycRecords, err := hd.Service.GetAllKYCVerificationsService(ctx)
 	if err != nil {
-		slog.Error(utils.ErrRetrievingUserDetails.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingUserDetails.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrRetrievingUserDetails.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -212,7 +212,7 @@ func (hd Handler) GetKYCRequestsHandler(w http.ResponseWriter, r *http.Request) 
 		w.Write([]byte(utils.ErrNoNewKYCRequestsFound))
 	} else {
 		if err := json.NewEncoder(w).Encode(kycRecords); err != nil {
-			slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+			slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err)
 			http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 		}
 	}
@@ -234,7 +234,7 @@ func (hd Handler) KYCRequestActionHandler(w http.ResponseWriter, r *http.Request
 	// Get user info from userID
 	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
 	if err != nil {
-		slog.Error(utils.ErrRetrievingUserByID.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingUserByID.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrRetrievingUserByID.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -251,14 +251,14 @@ func (hd Handler) KYCRequestActionHandler(w http.ResponseWriter, r *http.Request
 
 	// Decode the request body
 	if err := json.NewDecoder(r.Body).Decode(&KYCRequestAction); err != nil {
-		slog.Error(utils.ErrInvalidDuration.Error(), "error", err)
+		slog.Error(utils.ErrInvalidDuration.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrInvalidDuration.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Validate KYCID and VerificationStatus
 	if KYCRequestAction.KYCID == "" || KYCRequestAction.VerificationStatus == "" {
-		slog.Error(utils.ErrInvalidRequestPayload.Error(), "error", err)
+		slog.Error(utils.ErrInvalidRequestPayload.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrInvalidRequestPayload.Error(), http.StatusBadRequest)
 		return
 	}
@@ -271,7 +271,7 @@ func (hd Handler) KYCRequestActionHandler(w http.ResponseWriter, r *http.Request
 	case "2":
 		verificationStatus = utils.Unverified
 	default:
-		slog.Error(utils.ErrInvalidRequestPayload.Error(), "error", err)
+		slog.Error(utils.ErrInvalidRequestPayload.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrInvalidRequestPayload.Error(), http.StatusBadRequest)
 		return
 	}
@@ -279,7 +279,7 @@ func (hd Handler) KYCRequestActionHandler(w http.ResponseWriter, r *http.Request
 	// Update KYC verification status
 	err = hd.Service.UpdateKYCVerificationStatusService(ctx, KYCRequestAction.KYCID, verificationStatus, UserID)
 	if err != nil {
-		slog.Error(utils.ErrUpdatingKYCVerificationStatus.Error(), "error", err)
+		slog.Error(utils.ErrUpdatingKYCVerificationStatus.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrUpdatingKYCVerificationStatus.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -300,7 +300,7 @@ func (hd Handler) GetKYCDetailedInfoHandler(w http.ResponseWriter, r *http.Reque
 	// Retrieve user info from context
 	UserID, ok := ctx.Value(utils.CtxUserID).(string)
 	if !ok {
-		slog.Error(utils.ErrUnauthorizedAccessAttemptByNonAdminUser.Error(), "error", utils.UserInfoNotFoundInContext)
+		slog.Error(utils.ErrUnauthorizedAccessAttemptByNonAdminUser.Error(), utils.ErrorTag, utils.UserInfoNotFoundInContext)
 		http.Error(w, utils.ErrUnauthorizedAccessAttemptByNonAdminUser.Error(), http.StatusUnauthorized)
 		return
 	}
@@ -308,7 +308,7 @@ func (hd Handler) GetKYCDetailedInfoHandler(w http.ResponseWriter, r *http.Reque
 	// Get user info from userID
 	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
 	if err != nil {
-		slog.Error(utils.ErrRetrievingUserByID.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingUserByID.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrRetrievingUserByID.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -321,7 +321,7 @@ func (hd Handler) GetKYCDetailedInfoHandler(w http.ResponseWriter, r *http.Reque
 
 	// Validate that exactly one of kyc_id or user_email is provided
 	if (kycID == "" && userEmail == "") || (kycID != "" && userEmail != "") {
-		slog.Error(utils.ErrInvalidRequestPayload.Error(), "error", utils.BothKYCIDAndUserEmailProvided)
+		slog.Error(utils.ErrInvalidRequestPayload.Error(), utils.ErrorTag, utils.BothKYCIDAndUserEmailProvided)
 		http.Error(w, utils.ErrInvalidRequestPayload.Error(), http.StatusBadRequest)
 		return
 	}
@@ -329,7 +329,7 @@ func (hd Handler) GetKYCDetailedInfoHandler(w http.ResponseWriter, r *http.Reque
 	// Fetch KYC details using the provided kycID or userEmail
 	kycDetails, err := hd.Service.GetKYCDetailedInfo(ctx, kycID, userEmail)
 	if err != nil {
-		slog.Error(utils.ErrRetrievingKYCDetails.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingKYCDetails.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrRetrievingKYCDetails.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -337,7 +337,7 @@ func (hd Handler) GetKYCDetailedInfoHandler(w http.ResponseWriter, r *http.Reque
 	// Set response header and encode KYC details to JSON
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	if err := json.NewEncoder(w).Encode(kycDetails); err != nil {
-		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }

@@ -192,7 +192,16 @@ func (hd Handler) GetTransactionsHandler(w http.ResponseWriter, r *http.Request)
 	slog.Info(utils.LogRetrievingTransactions, senderEmail, receiverEmail)
 
 	// Fetch transactions based on the provided parameters
-	transactions, err := hd.Service.FetchTransactions(ctx, uuid.Nil, senderEmail, "", commonEmail, fromTime, toTime, 1, 10)
+	transactions, err := hd.Service.FetchTransactions(ctx, TransactionFilter{
+		TransactionID: uuid.Nil,
+		SenderEmail:   senderEmail,
+		ReceiverEmail: receiverEmail,
+		CommonEmail:   commonEmail,
+		FromTime:      fromTime,
+		ToTime:        toTime,
+		Page:          1,
+		Limit:         10,
+	})
 	if err != nil {
 		slog.Error(utils.ErrRetrievingOffersFromApplicationID.Error(), utils.ErrorTag, err) // Use a relevant error message
 		http.Error(w, utils.ErrRetrievingOffersFromApplicationID.Error(), http.StatusInternalServerError)

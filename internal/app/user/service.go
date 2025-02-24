@@ -56,8 +56,8 @@ func GenerateTokens(ctx context.Context, email string, originIP string) (string,
 		resetTokenExpirationHours = 1
 	)
 
-	JWT_SECRET := []byte(config.ConfigDetails.JWTSecretKey)
-	JWT_RESET_SECRET := []byte(config.ConfigDetails.JWTResetSecretKey)
+	jwtSecret := []byte(config.ConfigDetails.JWTSecretKey)
+	jwtResetSecret := []byte(config.ConfigDetails.JWTResetSecretKey)
 
 	// Define expiration times
 	loginExpiration := time.Now().Add(time.Hour * loginTokenExpirationHours) // 24 hours
@@ -71,9 +71,9 @@ func GenerateTokens(ctx context.Context, email string, originIP string) (string,
 		"origin": originIP,
 	}
 	loginToken := jwt.NewWithClaims(jwt.SigningMethodHS256, loginClaims)
-	loginTokenString, err := loginToken.SignedString(JWT_SECRET)
+	loginTokenString, err := loginToken.SignedString(jwtSecret)
 	if err != nil {
-		return "", "", fmt.Errorf("%s: %w", utils.ErrGeneratingToken, err)
+		return "", "", fmt.Errorf(utils.ErrorFormat, utils.ErrGeneratingToken, err)
 	}
 
 	// Create Reset Token
@@ -84,9 +84,9 @@ func GenerateTokens(ctx context.Context, email string, originIP string) (string,
 		"reset": true,
 	}
 	resetToken := jwt.NewWithClaims(jwt.SigningMethodHS256, resetClaims)
-	resetTokenString, err := resetToken.SignedString(JWT_RESET_SECRET)
+	resetTokenString, err := resetToken.SignedString(jwtResetSecret)
 	if err != nil {
-		return "", "", fmt.Errorf("%s: %w", utils.ErrGeneratingResetToken, err)
+		return "", "", fmt.Errorf(utils.ErrorFormat, utils.ErrGeneratingResetToken, err)
 	}
 
 	return loginTokenString, resetTokenString, nil
@@ -95,12 +95,12 @@ func GenerateTokens(ctx context.Context, email string, originIP string) (string,
 // PrivateKeyToHex converts an ECDSA private key to its hexadecimal string representation.
 func PrivateKeyToHex(privateKey *ecdsa.PrivateKey) (string, error) {
 	if privateKey == nil {
-		return "", fmt.Errorf("%s: %w", utils.ErrInvalidPrivateKey, utils.ErrNilData)
+		return "", fmt.Errorf(utils.ErrorFormat, utils.ErrInvalidPrivateKey, utils.ErrNilData)
 	}
 
 	privateKeyBytes := crypto.FromECDSA(privateKey) // Convert to byte slice
 	if len(privateKeyBytes) == 0 {
-		return "", fmt.Errorf("%s: %w", utils.ErrInvalidPrivateKey, utils.ErrNilData)
+		return "", fmt.Errorf(utils.ErrorFormat, utils.ErrInvalidPrivateKey, utils.ErrNilData)
 	}
 
 	hexString := hex.EncodeToString(privateKeyBytes) // Convert to hex string
@@ -115,7 +115,7 @@ func (sd service) CreateUserAccount(ctx context.Context, req SignupRequest) (str
 	// Convert role from string to integer
 	digitRole, err := strconv.Atoi(req.Role)
 	if err != nil || (digitRole != 1 && digitRole != 2) {
-		return "", fmt.Errorf("%s: %w", utils.ErrInvalidRole, err)
+		return "", fmt.Errorf(utils.ErrorFormat, utils.ErrInvalidRole, err)
 	}
 
 	// Check if the username or email already exists
@@ -124,47 +124,47 @@ func (sd service) CreateUserAccount(ctx context.Context, req SignupRequest) (str
 		return "", err
 	}
 	if usernameExists || emailExists {
-		return "", fmt.Errorf("%s: %w", utils.ErrUsernameOrEmailTaken, err)
+		return "", fmt.Errorf(utils.ErrorFormat, utils.ErrUsernameOrEmailTaken, err)
 	}
 
 	// Hash the user's password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", utils.ErrPasswordHashing, err)
+		return "", fmt.Errorf(utils.ErrorFormat, utils.ErrPasswordHashing, err)
 	}
 
 	// Create a new wallet for the user
 	walletAddress, privateKey, err := sd.ethRepo.CreateWallet(req.Password)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", utils.ErrWalletCreation, err)
+		return "", fmt.Errorf(utils.ErrorFormat, utils.ErrWalletCreation, err)
 	}
 
 	// Convert the private key to a hexadecimal string
 	privateKeyHex, err := PrivateKeyToHex(privateKey)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", utils.ErrInvalidPrivateKeyConversion, err)
+		return "", fmt.Errorf(utils.ErrorFormat, utils.ErrInvalidPrivateKeyConversion, err)
 	}
 
 	// Preload tokens into the user's wallet
 	testnetAmount := big.NewInt(1e18)
 	if err := sd.ethRepo.PreloadTokens(walletAddress, testnetAmount); err != nil {
-		return "", fmt.Errorf("%s: %w", utils.ErrTokenPreload, err)
+		return "", fmt.Errorf(utils.ErrorFormat, utils.ErrTokenPreload, err)
 	}
 
 	// Create the user in the database
 	if err := sd.userRepo.CreateUser(ctx, req.Username, req.Email, string(hashedPassword), req.FullName, req.DOB, walletAddress, digitRole); err != nil {
-		return "", fmt.Errorf("%s: %w", utils.ErrUserCreation, err)
+		return "", fmt.Errorf(utils.ErrorFormat, utils.ErrUserCreation, err)
 	}
 
 	// Retrieve the user by email to get the user ID
 	user, err := sd.userRepo.GetUserByEmail(ctx, req.Email)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", utils.ErrRetrievingUserID, err)
+		return "", fmt.Errorf(utils.ErrorFormat, utils.ErrRetrievingUserID, err)
 	}
 
 	// Insert the private key into the wallet repository
 	if err := sd.walletRepo.InsertPrivateKey(ctx, user.ID, walletAddress, privateKeyHex); err != nil {
-		return "", fmt.Errorf("%s: %w", utils.ErrInsertingPrivateKey, err)
+		return "", fmt.Errorf(utils.ErrorFormat, utils.ErrInsertingPrivateKey, err)
 	}
 
 	return walletAddress, nil
@@ -175,18 +175,18 @@ func (sd service) AuthenticateUser(ctx context.Context, credentials AuthCredenti
 	// Retrieve user by email
 	user, err := sd.userRepo.GetUserByEmail(ctx, credentials.Email)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", utils.ErrUserNotFound, err)
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrUserNotFound, err)
 	}
 
 	// Compare the provided password with the stored hashed password
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(credentials.Password)); err != nil {
-		return nil, fmt.Errorf("%s: %w", utils.ErrInvalidCredentials, err)
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrInvalidCredentials, err)
 	}
 
 	// Generate login and reset tokens
 	loginToken, resetToken, err := GenerateTokens(ctx, user.Email, originIP)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", utils.ErrTokenGenerationFailed, err)
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrTokenGenerationFailed, err)
 	}
 
 	// Return the generated tokens
@@ -201,13 +201,13 @@ func (sd service) InsertKYCVerificationService(ctx context.Context, userEmail, d
 	// Retrieve user by email
 	user, err := sd.userRepo.GetUserByEmail(ctx, userEmail)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", utils.ErrUserNotFound, err)
+		return "", fmt.Errorf(utils.ErrorFormat, utils.ErrUserNotFound, err)
 	}
 
 	// Insert KYC verification record
 	kycID, err := sd.userRepo.InsertKYCVerification(ctx, user.ID, documentType, documentNumber, verificationStatus)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", utils.ErrKYCVerificationInsertion, err)
+		return "", fmt.Errorf(utils.ErrorFormat, utils.ErrKYCVerificationInsertion, err)
 	}
 
 	return kycID, nil
@@ -215,12 +215,11 @@ func (sd service) InsertKYCVerificationService(ctx context.Context, userEmail, d
 
 // GetAllKYCVerificationsService retrieves all KYC verification records.
 func (sd service) GetAllKYCVerificationsService(ctx context.Context) ([]repo.KYCRecord, error) {
-	const errFetchingKYCRecords = "failed to fetch KYC verification records"
 
 	// Retrieve all KYC verification records
 	kycRecords, err := sd.userRepo.GetAllKYCVerifications(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", errFetchingKYCRecords, err)
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchKYCDetailedInfo, err)
 	}
 
 	return kycRecords, nil
@@ -231,7 +230,7 @@ func (sd service) UpdateKYCVerificationStatusService(ctx context.Context, kycID,
 
 	// Update the KYC verification status in the repository
 	if err := sd.userRepo.UpdateKYCVerificationStatus(ctx, kycID, verificationStatus, verifiedBy); err != nil {
-		return fmt.Errorf("%s: %w", utils.ErrUpdatingKYCVerificationStatus, err)
+		return fmt.Errorf(utils.ErrorFormat, utils.ErrUpdatingKYCVerificationStatus, err)
 	}
 
 	return nil
@@ -241,7 +240,7 @@ func (sd service) UpdateKYCVerificationStatusService(ctx context.Context, kycID,
 func (sd service) GetKYCDetailedInfo(ctx context.Context, kycID, userEmail string) ([]repo.KYCRecord, error) {
 	// Validate input parameters
 	if (kycID == "" && userEmail == "") || (kycID != "" && userEmail != "") {
-		return nil, fmt.Errorf("%s: %w", utils.ErrInvalidInput, utils.ErrInvalidInput)
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrInvalidInput, utils.ErrInvalidInput)
 	}
 
 	var userID string
@@ -249,13 +248,18 @@ func (sd service) GetKYCDetailedInfo(ctx context.Context, kycID, userEmail strin
 		// Retrieve user by email
 		user, err := sd.userRepo.GetUserByEmail(ctx, userEmail)
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", utils.ErrUserRetrievalFailed, err)
+			return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrUserRetrievalFailed, err)
 		}
 		userID = user.ID
 	}
 
 	// Retrieve KYC detailed information
-	return sd.userRepo.GetKYCDetailedInfo(ctx, kycID, userID)
+	kycRecords, err := sd.userRepo.GetKYCDetailedInfo(ctx, kycID, userID)
+	if err != nil {
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchKYCDetailedInfo, err)
+	}
+
+	return kycRecords, nil
 }
 
 // GetUserByID retrieves a user by their ID, including their email and highest role.
@@ -263,13 +267,13 @@ func (sd service) GetUserByID(ctx context.Context, userID string) (utils.User, e
 	// Fetch detailed user information from the repository
 	detailedUser, err := sd.userRepo.GetuserByID(ctx, userID)
 	if err != nil {
-		return utils.User{}, fmt.Errorf("%s: %w", utils.ErrFetchingUser, err)
+		return utils.User{}, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingUser, err)
 	}
 
 	// Fetch the highest role of the user
 	role, err := sd.userRepo.GetUserHighestRole(ctx, userID)
 	if err != nil {
-		return utils.User{}, fmt.Errorf("%s: %w", utils.ErrFetchingRole, err)
+		return utils.User{}, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingRole, err)
 	}
 
 	// Return the user details including ID, email, and role

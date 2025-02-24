@@ -43,18 +43,18 @@ func (ethdep ethRepo) CreateWallet(password string) (string, *ecdsa.PrivateKey, 
 	// Step 2: Create a new account
 	account, err := ks.NewAccount(password)
 	if err != nil {
-		return "", nil, fmt.Errorf("%s: %w", utils.ErrAccountCreationFailed, err)
+		return "", nil, fmt.Errorf(utils.ErrorFormat, utils.ErrAccountCreationFailed, err)
 	}
 
 	// Step 3: Extract the private key from the keystore file
 	keyJSON, err := os.ReadFile(account.URL.Path) // Read the keystore file
 	if err != nil {
-		return "", nil, fmt.Errorf("%s: %w", utils.ErrKeystoreReadFailed, err)
+		return "", nil, fmt.Errorf(utils.ErrorFormat, utils.ErrKeystoreReadFailed, err)
 	}
 
 	key, err := keystore.DecryptKey(keyJSON, password) // Decrypt the keystore file
 	if err != nil {
-		return "", nil, fmt.Errorf("%s: %w", utils.ErrKeyDecryptionFailed, err)
+		return "", nil, fmt.Errorf(utils.ErrorFormat, utils.ErrKeyDecryptionFailed, err)
 	}
 
 	privateKey := key.PrivateKey // Extract the private key
@@ -62,6 +62,7 @@ func (ethdep ethRepo) CreateWallet(password string) (string, *ecdsa.PrivateKey, 
 }
 
 // TransferFunds transfers funds between two Ethereum addresses
+
 func (ethdep ethRepo) TransferFunds(fromPrivateKeyHex string, fromAddressHex string, toAddressHex string, amount *big.Int, gasPrice *big.Int, gasLimit uint64, chainID *big.Int) (*types.Transaction, error) {
 	// Convert hex addresses to common.Address type
 	fromAddress := common.HexToAddress(fromAddressHex)
@@ -70,24 +71,28 @@ func (ethdep ethRepo) TransferFunds(fromPrivateKeyHex string, fromAddressHex str
 	// Parse the private key from hex string
 	privateKey, err := crypto.HexToECDSA(fromPrivateKeyHex)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", utils.ErrTransferFunds, err) // Propagate error
+		slog.Error(utils.ErrInvalidPrivateKey.Error(), utils.ErrorTag, err)
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrTransferFunds, err) // Propagate error
 	}
 
 	// Verify the sender address derived from the private key
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
-		return nil, fmt.Errorf("error casting public key to ECDSA")
+		slog.Error(utils.ErrPublicKeyCast.Error(), utils.ErrorTag, err)
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrTransferFunds, utils.ErrPublicKeyCast)
 	}
 	derivedAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
 	if derivedAddress != fromAddress {
-		return nil, fmt.Errorf("derived address (%s) does not match fromAddress (%s)", derivedAddress.Hex(), fromAddress.Hex())
+		slog.Error(utils.ErrAddressMismatch.Error(), utils.DerivedAddressTag, derivedAddress.Hex(), utils.FromAddressTag, fromAddress.Hex())
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrTransferFunds, utils.ErrAddressMismatch)
 	}
 
 	// Get the nonce for the sender's address
 	nonce, err := ethdep.ethereumClient.PendingNonceAt(context.Background(), fromAddress)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", utils.ErrTransferFunds, err) // Propagate error
+		slog.Error(utils.ErrNonceRetrieval.Error(), utils.ErrorTag, err)
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrTransferFunds, err) // Propagate error
 	}
 
 	// Sign the transaction using LegacyTxType for compatibility
@@ -100,17 +105,20 @@ func (ethdep ethRepo) TransferFunds(fromPrivateKeyHex string, fromAddressHex str
 		Data:     nil,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", utils.ErrTransferFunds, err) // Propagate error
+		slog.Error(utils.ErrTransactionSigning.Error(), utils.ErrorTag, err)
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrTransferFunds, err) // Propagate error
 	}
 
 	// Verify the signature of the signed transaction
 	signer := types.NewEIP155Signer(chainID)
 	sender, err := types.Sender(signer, signedTx)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", utils.ErrTransferFunds, err) // Propagate error
+		slog.Error(utils.ErrSenderVerification.Error(), utils.ErrorTag, err)
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrTransferFunds, err) // Propagate error
 	}
 	if sender != fromAddress {
-		return nil, fmt.Errorf("recovered sender (%s) does not match fromAddress (%s)", sender.Hex(), fromAddress.Hex())
+		slog.Error(utils.ErrAddressMismatch.Error(), utils.RecoveredSenderTag, sender.Hex(), utils.FromAddressTag, fromAddress.Hex())
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrTransferFunds, utils.ErrAddressMismatch)
 	}
 
 	return signedTx, nil
@@ -123,7 +131,7 @@ func (ethdep ethRepo) PreloadTokens(walletAddress string, amount *big.Int) error
 
 	// Check if the Ethereum client is initialized
 	if ethdep.ethereumClient == nil {
-		return fmt.Errorf("%s", utils.ErrEthereumClientNotInitialized)
+		return utils.ErrEthereumClientNotInitialized
 	}
 
 	// Define the private key and sender address
@@ -138,13 +146,13 @@ func (ethdep ethRepo) PreloadTokens(walletAddress string, amount *big.Int) error
 	// Call TransferFunds to handle the actual fund transfer
 	signedTx, err := ethdep.TransferFunds(fromPrivateKeyHex, fromAddressHex, walletAddress, amount, gasPrice, gasLimit, chainID)
 	if err != nil {
-		return fmt.Errorf("%s: %w", utils.ErrTransferFunds, err) // Propagate error
+		return fmt.Errorf(utils.ErrorFormat, utils.ErrTransferFunds, err) // Propagate error
 	}
 
 	// Send the transaction
 	err = ethdep.ethereumClient.SendTransaction(context.Background(), signedTx)
 	if err != nil {
-		return fmt.Errorf("%s: %w", utils.ErrWalletTransactionFailed, err) // Propagate error
+		return fmt.Errorf(utils.ErrorFormat, utils.ErrWalletTransactionFailed, err) // Propagate error
 	}
 
 	slog.Info(fmt.Sprintf(utils.LogTokenPreloadingSuccess, walletAddress, signedTx.Hash().Hex()))

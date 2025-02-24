@@ -30,8 +30,8 @@ type Service interface {
 	TransferFunds(ctx context.Context, userInfo utils.User, req TransferRequest) (repo.Transaction, *big.Int, error)
 	ValidateSenderAddress(ctx context.Context, senderWalletID string, privateKey *ecdsa.PrivateKey) error
 	ValidateUserPassword(ctx context.Context, email, password string) error
-	AddTransaction(ctx context.Context, transactionID uuid.UUID, senderWalletID, receiverWalletID string, amount *big.Float, transactionType, status, transactionHash string, fee *big.Float) (repo.Transaction, error)
-	FetchTransactions(ctx context.Context, transactionID uuid.UUID, senderEmail string, receiverEmail string, commonEmail string, fromTime time.Time, toTime time.Time, page int, limit int) ([]repo.Transaction, error)
+	AddTransaction(ctx context.Context, data TransactionData) (repo.Transaction, error)
+	FetchTransactions(ctx context.Context, filter TransactionFilter) ([]repo.Transaction, error)
 	GetUserByID(ctx context.Context, userID string) (utils.User, error)
 }
 
@@ -44,19 +44,43 @@ func NewService(ctx context.Context, userRepo repo.UserStorer, walletRepo repo.W
 	}
 }
 
+// TransactionData encapsulates the data needed for a transaction
+type TransactionData struct {
+	ID               uuid.UUID
+	SenderWalletID   string
+	ReceiverWalletID string
+	Amount           *big.Float
+	Type             string
+	Status           string
+	Hash             string
+	Fee              *big.Float
+}
+
+// TransactionFilter encapsulates the filters for fetching transactions
+type TransactionFilter struct {
+	TransactionID uuid.UUID
+	SenderEmail   string
+	ReceiverEmail string
+	CommonEmail   string
+	FromTime      time.Time
+	ToTime        time.Time
+	Page          int
+	Limit         int
+}
+
 // GetWalletIDForUser retrieves the wallet ID based on user role and query params.
 func (sd service) GetWalletIDForUser(ctx context.Context, userInfo utils.User, queryEmail, queryUserID string) (string, error) {
 	if userInfo.UserRole == 3 && (queryUserID != "" || queryEmail != "") {
 		walletID, err := sd.walletRepo.GetWalletID(ctx, queryEmail, queryUserID)
 		if err != nil {
-			return "", fmt.Errorf("%s: %w", utils.ErrFetchingWalletID, err)
+			return "", fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingWalletID, err)
 		}
 		return walletID, nil
 	}
 
 	walletID, err := sd.walletRepo.GetWalletID(ctx, userInfo.UserEmail, userInfo.UserID)
 	if err != nil {
-		return "", fmt.Errorf("%s: %w", utils.ErrFetchingWalletID, err)
+		return "", fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingWalletID, err)
 	}
 	return walletID, nil
 }
@@ -65,13 +89,13 @@ func (sd service) GetWalletIDForUser(ctx context.Context, userInfo utils.User, q
 func (sd service) GetBalanceByWalletID(ctx context.Context, walletID string) (*big.Float, error) {
 	// Validate the wallet address format
 	if !common.IsHexAddress(walletID) {
-		return nil, fmt.Errorf("%s: %w", utils.ErrInvalidWalletAddress, utils.ErrInvalidInput)
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrInvalidWalletAddress, utils.ErrInvalidInput)
 	}
 
 	// Fetch the balance from the Ethereum client
 	balance, err := ethereum.EthereumClient.BalanceAt(ctx, common.HexToAddress(walletID), nil)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", utils.ErrFetchBalance, err)
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchBalance, err)
 	}
 
 	// Convert the balance from wei to ETH
@@ -79,7 +103,7 @@ func (sd service) GetBalanceByWalletID(ctx context.Context, walletID string) (*b
 
 	// Update the wallet balance in the repository
 	if err := sd.walletRepo.UpdateBalance(ctx, walletID, ethBalance); err != nil {
-		return nil, fmt.Errorf("%s: %w", utils.ErrUpdatingBalance, err)
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrUpdatingBalance, err)
 	}
 
 	return ethBalance, nil
@@ -97,7 +121,7 @@ func (sd service) ValidateSenderAddress(ctx context.Context, senderWalletID stri
 
 	// Check if the derived address matches the sender's address
 	if senderAddress != derivedAddress {
-		return fmt.Errorf("%s: %w", utils.ErrUnauthorizedSenderAddress, utils.ErrInvalidSenderAddress)
+		return fmt.Errorf(utils.ErrorFormat, utils.ErrUnauthorizedSenderAddress, utils.ErrInvalidSenderAddress)
 	}
 
 	return nil
@@ -108,12 +132,12 @@ func (sd service) ValidateUserPassword(ctx context.Context, email, password stri
 	// Retrieve the user by email
 	user, err := sd.userRepo.GetUserByEmail(ctx, email)
 	if err != nil {
-		return fmt.Errorf("%s: %w", utils.ErrUserNotFound, err)
+		return fmt.Errorf(utils.ErrorFormat, utils.ErrUserNotFound, err)
 	}
 
 	// Compare the provided password with the stored password hash
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		return fmt.Errorf("%s: %w", utils.ErrInvalidPassword, err)
+		return fmt.Errorf(utils.ErrorFormat, utils.ErrInvalidPassword, err)
 	}
 
 	return nil
@@ -124,23 +148,21 @@ func (sd service) GetTransactionByID(ctx context.Context, transactionID uuid.UUI
 	// Fetch the transaction from the repository
 	transaction, err := sd.walletRepo.GetTransactionByID(ctx, transactionID)
 	if err != nil {
-		return repo.Transaction{}, fmt.Errorf("%s: %w", utils.ErrFetchingTransaction, err)
+		return repo.Transaction{}, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingTransaction, err)
 	}
 
 	return transaction, nil
 }
 
 // AddTransaction inserts a new transaction into the database and returns the inserted data.
-func (sd service) AddTransaction(ctx context.Context, transactionID uuid.UUID, senderWalletID, receiverWalletID string, amount *big.Float, transactionType, status, transactionHash string, fee *big.Float) (repo.Transaction, error) {
-
+func (sd service) AddTransaction(ctx context.Context, data TransactionData) (repo.Transaction, error) {
 	// Attempt to add the transaction using the repository method
-	insertedTransaction, err := sd.walletRepo.AddTransaction(ctx, transactionID, senderWalletID, receiverWalletID, amount, transactionType, status, transactionHash, fee)
+	insertedTransaction, err := sd.walletRepo.AddTransaction(ctx, data.ID, data.SenderWalletID, data.ReceiverWalletID,
+		data.Amount, data.Type, data.Status, data.Hash, data.Fee)
 	if err != nil {
-		// Propagate the error with a standard error message
-		return repo.Transaction{}, fmt.Errorf("%s: %w", utils.ErrAddingTransaction, err)
+		return repo.Transaction{}, fmt.Errorf(utils.ErrorFormat, utils.ErrAddingTransaction, err)
 	}
 
-	// Return the successfully inserted transaction
 	return insertedTransaction, nil
 }
 
@@ -149,13 +171,13 @@ func (sd service) TransferFunds(ctx context.Context, userInfo utils.User, req Tr
 	// Get sender wallet ID
 	senderWalletID, err := sd.walletRepo.GetWalletID(ctx, userInfo.UserEmail, userInfo.UserID)
 	if err != nil {
-		return repo.Transaction{}, nil, fmt.Errorf("%s: %w", utils.ErrSenderWalletNotFound, err)
+		return repo.Transaction{}, nil, fmt.Errorf(utils.ErrorFormat, utils.ErrSenderWalletNotFound, err)
 	}
 
 	// Get recipient wallet ID
 	recipientWalletID, err := sd.walletRepo.GetWalletID(ctx, req.RecipientEmail, "")
 	if err != nil {
-		return repo.Transaction{}, nil, fmt.Errorf("%s: %w", utils.ErrRecipientWalletNotFound, err)
+		return repo.Transaction{}, nil, fmt.Errorf(utils.ErrorFormat, utils.ErrRecipientWalletNotFound, err)
 	}
 
 	// Validate user password
@@ -166,12 +188,12 @@ func (sd service) TransferFunds(ctx context.Context, userInfo utils.User, req Tr
 	// Retrieve sender's private key
 	privateKeyHex, err := sd.walletRepo.RetrievePrivateKey(ctx, userInfo.UserID, "")
 	if err != nil {
-		return repo.Transaction{}, nil, fmt.Errorf("%s: %w", utils.ErrRetrievingPrivateKey, err)
+		return repo.Transaction{}, nil, fmt.Errorf(utils.ErrorFormat, utils.ErrRetrievingPrivateKey, err)
 	}
 
 	privateKey, err := crypto.HexToECDSA(privateKeyHex)
 	if err != nil {
-		return repo.Transaction{}, nil, fmt.Errorf("%s: %w", utils.ErrInvalidPrivateKey, err)
+		return repo.Transaction{}, nil, fmt.Errorf(utils.ErrorFormat, utils.ErrInvalidPrivateKey, err)
 	}
 
 	// Validate sender address
@@ -182,7 +204,7 @@ func (sd service) TransferFunds(ctx context.Context, userInfo utils.User, req Tr
 	// Convert amount from string to big.Int
 	amount, success := new(big.Int).SetString(req.AmountETH, 10)
 	if !success {
-		return repo.Transaction{}, nil, fmt.Errorf("%s: %w", utils.ErrInvalidAmountFormat, err)
+		return repo.Transaction{}, nil, fmt.Errorf(utils.ErrorFormat, utils.ErrInvalidAmountFormat, err)
 	}
 
 	// Set gas details and chain ID
@@ -195,19 +217,19 @@ func (sd service) TransferFunds(ctx context.Context, userInfo utils.User, req Tr
 	// Transfer funds
 	signedTx, err := sd.ethRepo.TransferFunds(privateKeyHexStr, senderWalletID, recipientWalletID, amount, gasPrice, gasLimit, chainID)
 	if err != nil {
-		return repo.Transaction{}, nil, fmt.Errorf("%s: %w", utils.ErrTransactionFailed, err)
+		return repo.Transaction{}, nil, fmt.Errorf(utils.ErrorFormat, utils.ErrTransactionFailed, err)
 	}
 
 	// Send transaction
 	if err := ethereum.EthereumClient.SendTransaction(context.Background(), signedTx); err != nil {
-		return repo.Transaction{}, nil, fmt.Errorf("%s: %w", utils.ErrFailedToBroadcastTransaction, err)
+		return repo.Transaction{}, nil, fmt.Errorf(utils.ErrorFormat, utils.ErrFailedToBroadcastTransaction, err)
 	}
 
 	// Get transaction receipt to fetch actual gas used
 	txHash := signedTx.Hash().Hex()
 	receipt, err := ethereum.EthereumClient.TransactionReceipt(ctx, signedTx.Hash())
 	if err != nil {
-		return repo.Transaction{}, nil, fmt.Errorf("%s: %w", utils.ErrFailedToGetTransactionReceipt, err)
+		return repo.Transaction{}, nil, fmt.Errorf(utils.ErrorFormat, utils.ErrFailedToGetTransactionReceipt, err)
 	}
 
 	// Calculate exact transaction fee
@@ -220,82 +242,79 @@ func (sd service) TransferFunds(ctx context.Context, userInfo utils.User, req Tr
 
 	// Add transaction to the database
 	transactionID := uuid.New()
-	transactionType := "transfer"
-	status := "completed" // Assuming the transaction is successful at this point
 
-	transaction, err := sd.walletRepo.AddTransaction(
-		ctx,
-		transactionID,
-		senderWalletID,
-		recipientWalletID,
-		amountFloat,
-		transactionType,
-		status,
-		txHash,
-		feeFloat,
-	)
+	transaction, err := sd.AddTransaction(ctx, TransactionData{
+		ID:               transactionID,
+		SenderWalletID:   senderWalletID,
+		ReceiverWalletID: recipientWalletID,
+		Amount:           amountFloat,
+		Type:             "transfer",
+		Status:           "completed",
+		Hash:             txHash,
+		Fee:              feeFloat,
+	})
 	if err != nil {
-		return repo.Transaction{}, exactFee, fmt.Errorf("%s: %w", utils.ErrFailedToAddTransactionToDB, err)
+		return repo.Transaction{}, exactFee, fmt.Errorf(utils.ErrorFormat, utils.ErrFailedToAddTransactionToDB, err)
 	}
 
 	// Update sender's balance
 	balance1, err := ethereum.EthereumClient.BalanceAt(context.Background(), common.HexToAddress(senderWalletID), nil)
 	if err != nil {
-		return repo.Transaction{}, exactFee, fmt.Errorf("%s: %w", utils.ErrFailedToFetchBalance, err)
+		return repo.Transaction{}, exactFee, fmt.Errorf(utils.ErrorFormat, utils.ErrFailedToFetchBalance, err)
 	}
 	ethBalance1 := new(big.Float).Quo(new(big.Float).SetInt(balance1), big.NewFloat(1e18))
 	if err := sd.walletRepo.UpdateBalance(ctx, senderWalletID, ethBalance1); err != nil {
-		return repo.Transaction{}, exactFee, fmt.Errorf("%s: %w", utils.ErrFailedToUpdateWalletBalance, err)
+		return repo.Transaction{}, exactFee, fmt.Errorf(utils.ErrorFormat, utils.ErrFailedToUpdateWalletBalance, err)
 	}
 
 	// Update recipient's balance
 	balance2, err := ethereum.EthereumClient.BalanceAt(context.Background(), common.HexToAddress(recipientWalletID), nil)
 	if err != nil {
-		return repo.Transaction{}, exactFee, fmt.Errorf("%s: %w", utils.ErrFailedToFetchBalance, err)
+		return repo.Transaction{}, exactFee, fmt.Errorf(utils.ErrorFormat, utils.ErrFailedToFetchBalance, err)
 	}
 	ethBalance2 := new(big.Float).Quo(new(big.Float).SetInt(balance2), big.NewFloat(1e18))
 	if err := sd.walletRepo.UpdateBalance(ctx, recipientWalletID, ethBalance2); err != nil {
-		return repo.Transaction{}, exactFee, fmt.Errorf("%s: %w", utils.ErrFailedToUpdateWalletBalance, err)
+		return repo.Transaction{}, exactFee, fmt.Errorf(utils.ErrorFormat, utils.ErrFailedToUpdateWalletBalance, err)
 	}
 
 	return transaction, exactFee, nil
 }
 
 // FetchTransactions retrieves a list of transactions based on the provided filters.
-func (sd service) FetchTransactions(ctx context.Context, transactionID uuid.UUID, senderEmail string, receiverEmail string, commonEmail string, fromTime time.Time, toTime time.Time, page int, limit int) ([]repo.Transaction, error) {
+func (sd service) FetchTransactions(ctx context.Context, filter TransactionFilter) ([]repo.Transaction, error) {
 	var senderWalletID, receiverWalletID, commonWalletID string
 
 	// Retrieve sender wallet ID if provided
-	if senderEmail != "" {
-		id, err := sd.walletRepo.GetWalletID(ctx, senderEmail, "")
+	if filter.SenderEmail != "" {
+		id, err := sd.walletRepo.GetWalletID(ctx, filter.SenderEmail, "")
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", utils.ErrFetchingWalletID, err)
+			return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingWalletID, err)
 		}
 		senderWalletID = id
 	}
 
 	// Retrieve receiver wallet ID if provided
-	if receiverEmail != "" {
-		id, err := sd.walletRepo.GetWalletID(ctx, receiverEmail, "")
+	if filter.ReceiverEmail != "" {
+		id, err := sd.walletRepo.GetWalletID(ctx, filter.ReceiverEmail, "")
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", utils.ErrFetchingWalletID, err)
+			return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingWalletID, err)
 		}
 		receiverWalletID = id
 	}
 
 	// Retrieve common wallet ID if provided
-	if commonEmail != "" {
-		id, err := sd.walletRepo.GetWalletID(ctx, commonEmail, "")
+	if filter.CommonEmail != "" {
+		id, err := sd.walletRepo.GetWalletID(ctx, filter.CommonEmail, "")
 		if err != nil {
-			return nil, fmt.Errorf("%s: %w", utils.ErrFetchingWalletID, err)
+			return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingWalletID, err)
 		}
 		commonWalletID = id
 	}
 
 	// Fetch transactions based on the retrieved wallet IDs and other filters
-	transactions, err := sd.walletRepo.GetTransactions(ctx, uuid.Nil, senderWalletID, receiverWalletID, commonWalletID, fromTime, toTime, page, limit)
+	transactions, err := sd.walletRepo.GetTransactions(ctx, filter.TransactionID, senderWalletID, receiverWalletID, commonWalletID, filter.FromTime, filter.ToTime, filter.Page, filter.Limit)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", utils.ErrFetchingTransactions, err)
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingTransactions, err)
 	}
 	return transactions, nil
 }
@@ -305,13 +324,13 @@ func (sd service) GetUserByID(ctx context.Context, userID string) (utils.User, e
 	// Fetch detailed user information from the repository
 	detailedUser, err := sd.userRepo.GetuserByID(ctx, userID)
 	if err != nil {
-		return utils.User{}, fmt.Errorf("%s: %w", utils.ErrNoUserFound, err)
+		return utils.User{}, fmt.Errorf(utils.ErrorFormat, utils.ErrNoUserFound, err)
 	}
 
 	// Fetch the highest role of the user
 	role, err := sd.userRepo.GetUserHighestRole(ctx, userID)
 	if err != nil {
-		return utils.User{}, fmt.Errorf("%s: %w", utils.ErrFetchingRoles, err)
+		return utils.User{}, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingRoles, err)
 	}
 
 	// Return the user details including ID, email, and role

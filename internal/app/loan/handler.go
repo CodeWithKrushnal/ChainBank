@@ -42,7 +42,7 @@ func (hd Handler) CreateLoanApplicationHandler(w http.ResponseWriter, r *http.Re
 	// Extract user info from context
 	UserID, ok := ctx.Value(utils.CtxUserID).(string)
 	if !ok {
-		slog.Error(utils.ErrUnauthorized.Error(), "error", utils.ErrUnauthorized)
+		slog.Error(utils.ErrUnauthorized.Error(), utils.ErrorTag, utils.ErrUnauthorized)
 		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
 		return
 	}
@@ -50,24 +50,24 @@ func (hd Handler) CreateLoanApplicationHandler(w http.ResponseWriter, r *http.Re
 	// Decode application body
 	var payload LoanApplicationPayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		slog.Error(utils.ErrInvalidRequestPayload.Error(), "error", err)
+		slog.Error(utils.ErrInvalidRequestPayload.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrInvalidRequestPayload.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Validate request data
 	if payload.Amount <= 0 {
-		slog.Error(utils.ErrInvalidAmount.Error(), "error", utils.ErrInvalidAmount)
+		slog.Error(utils.ErrInvalidAmount.Error(), utils.ErrorTag, utils.ErrInvalidAmount)
 		http.Error(w, utils.ErrInvalidAmount.Error(), http.StatusBadRequest)
 		return
 	}
 	if payload.InterestRate <= 0 {
-		slog.Error(utils.ErrInvalidInterestRate.Error(), "error", utils.ErrInvalidInterestRate)
+		slog.Error(utils.ErrInvalidInterestRate.Error(), utils.ErrorTag, utils.ErrInvalidInterestRate)
 		http.Error(w, utils.ErrInvalidInterestRate.Error(), http.StatusBadRequest)
 		return
 	}
 	if payload.TermMonths <= 0 {
-		slog.Error(utils.ErrInvalidTermMonths.Error(), "error", utils.ErrInvalidTermMonths)
+		slog.Error(utils.ErrInvalidTermMonths.Error(), utils.ErrorTag, utils.ErrInvalidTermMonths)
 		http.Error(w, utils.ErrInvalidTermMonths.Error(), http.StatusBadRequest)
 		return
 	}
@@ -75,7 +75,7 @@ func (hd Handler) CreateLoanApplicationHandler(w http.ResponseWriter, r *http.Re
 	// Call the service to create loan application
 	loanapplication, err := hd.Service.CreateLoanapplication(ctx, UserID, payload.Amount, payload.InterestRate, payload.TermMonths)
 	if err != nil {
-		slog.Error(utils.ErrCreateLoanApplication.Error(), "error", err)
+		slog.Error(utils.ErrCreateLoanApplication.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrCreateLoanApplication.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -84,7 +84,7 @@ func (hd Handler) CreateLoanApplicationHandler(w http.ResponseWriter, r *http.Re
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(loanapplication); err != nil {
-		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
@@ -110,7 +110,7 @@ func (hd Handler) GetLoanApplicationByIDHandler(w http.ResponseWriter, r *http.R
 	// Fetch loan application details
 	loanApplications, err := hd.Service.GetLoanapplications(ctx, applicationIDStr, "", "")
 	if err != nil {
-		slog.Error(utils.ErrRetrievingApplication.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingApplication.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrRetrievingApplication.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -125,7 +125,7 @@ func (hd Handler) GetLoanApplicationByIDHandler(w http.ResponseWriter, r *http.R
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(loanApplications); err != nil {
-		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
@@ -145,7 +145,7 @@ func (hd Handler) GetLoanAppliactionsHandler(w http.ResponseWriter, r *http.Requ
 	// Fetch user information from the database
 	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
 	if err != nil {
-		slog.Error(utils.ErrRetrievingUser.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingUser.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrRetrievingUser.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -155,19 +155,16 @@ func (hd Handler) GetLoanAppliactionsHandler(w http.ResponseWriter, r *http.Requ
 	borrowerID := query.Get(utils.RequestUserID)
 	status := query.Get(utils.Status)
 
-	// Authorization check: Non-admin users cannot access other user's data
-	if borrowerID != "" && userInfo.UserRole != 3 && borrowerID != userInfo.UserID {
-		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
-		return
-	} else if borrowerID == "" && status != utils.StatusOpen && userInfo.UserRole != 3 {
-		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
+	// Authorization check using helper function
+	if err := hd.checkUserAuthorization(userInfo, borrowerID, status); err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 
 	// Fetch loan applications based on query parameters
 	loanApplications, err := hd.Service.GetLoanapplications(ctx, "", borrowerID, status)
 	if err != nil {
-		slog.Error(utils.ErrFailedToFetchLoanApplications.Error(), "error", err)
+		slog.Error(utils.ErrFailedToFetchLoanApplications.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToFetchLoanApplications.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -182,7 +179,7 @@ func (hd Handler) GetLoanAppliactionsHandler(w http.ResponseWriter, r *http.Requ
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(loanApplications); err != nil {
-		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
@@ -204,7 +201,7 @@ func (hd Handler) CreateLoanOfferHandler(w http.ResponseWriter, r *http.Request)
 	vars := mux.Vars(r)
 	applicationID, err := uuid.Parse(vars[utils.ApplicationID])
 	if err != nil {
-		slog.Error(utils.ErrInvalidApplicationID.Error(), "error", err) // Log the error
+		slog.Error(utils.ErrInvalidApplicationID.Error(), utils.ErrorTag, err) // Log the error
 		http.Error(w, utils.ErrInvalidApplicationID.Error(), http.StatusBadRequest)
 		return
 	}
@@ -212,24 +209,24 @@ func (hd Handler) CreateLoanOfferHandler(w http.ResponseWriter, r *http.Request)
 	var payload LoanOfferPayload
 	// Parse request body
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-		slog.Error(utils.ErrInvalidRequestPayload.Error(), "error", err) // Log the error
+		slog.Error(utils.ErrInvalidRequestPayload.Error(), utils.ErrorTag, err) // Log the error
 		http.Error(w, utils.ErrInvalidRequestPayload.Error(), http.StatusBadRequest)
 		return
 	}
 
 	// Validate request fields
 	if payload.Amount <= 0 {
-		slog.Error(utils.ErrInvalidAmount.Error(), "error", utils.ErrInvalidAmount) // Log the error
+		slog.Error(utils.ErrInvalidAmount.Error(), utils.ErrorTag, utils.ErrInvalidAmount) // Log the error
 		http.Error(w, utils.ErrInvalidAmount.Error(), http.StatusBadRequest)
 		return
 	}
 	if payload.InterestRate <= 0 {
-		slog.Error(utils.ErrInvalidInterestRate.Error(), "error", utils.ErrInvalidInterestRate) // Log the error
+		slog.Error(utils.ErrInvalidInterestRate.Error(), utils.ErrorTag, utils.ErrInvalidInterestRate) // Log the error
 		http.Error(w, utils.ErrInvalidInterestRate.Error(), http.StatusBadRequest)
 		return
 	}
 	if payload.Duration <= 0 {
-		slog.Error(utils.ErrInvalidDuration.Error(), "error", utils.ErrInvalidDuration) // Log the error
+		slog.Error(utils.ErrInvalidDuration.Error(), utils.ErrorTag, utils.ErrInvalidDuration) // Log the error
 		http.Error(w, utils.ErrInvalidDuration.Error(), http.StatusBadRequest)
 		return
 	}
@@ -237,7 +234,7 @@ func (hd Handler) CreateLoanOfferHandler(w http.ResponseWriter, r *http.Request)
 	// Call service layer to create the loan offer
 	loanOffer, err := hd.Service.CreateLoanOffer(ctx, UserID, payload.Amount, payload.InterestRate, payload.Duration, applicationID.String())
 	if err != nil {
-		slog.Error(utils.ErrCreateLoanOffer.Error(), "error", err) // Log the error
+		slog.Error(utils.ErrCreateLoanOffer.Error(), utils.ErrorTag, err) // Log the error
 		http.Error(w, utils.ErrCreateLoanOffer.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -246,7 +243,7 @@ func (hd Handler) CreateLoanOfferHandler(w http.ResponseWriter, r *http.Request)
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusCreated)
 	if err := json.NewEncoder(w).Encode(loanOffer); err != nil {
-		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err) // Log the error
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err) // Log the error
 		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
@@ -273,7 +270,7 @@ func (hd Handler) GetLoanOfferByIDHandler(w http.ResponseWriter, r *http.Request
 	// Fetch loan application details
 	loanApplications, err := hd.Service.GetLoanOffers(ctx, offerIDStr, "", "", "")
 	if err != nil {
-		slog.Error(utils.ErrFailedToFetchLoanOffers.Error(), "error", err)
+		slog.Error(utils.ErrFailedToFetchLoanOffers.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToFetchLoanOffers.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -288,7 +285,7 @@ func (hd Handler) GetLoanOfferByIDHandler(w http.ResponseWriter, r *http.Request
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(loanApplications); err != nil {
-		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
@@ -310,7 +307,7 @@ func (hd Handler) GetOffersByApplicationIDHandler(w http.ResponseWriter, r *http
 	vars := mux.Vars(r)
 	applicationID, err := uuid.Parse(vars[utils.ApplicationID])
 	if err != nil {
-		slog.Error(utils.ErrInvalidApplicationID.Error(), "error", err)
+		slog.Error(utils.ErrInvalidApplicationID.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrInvalidApplicationID.Error(), http.StatusBadRequest)
 		return
 	}
@@ -318,7 +315,7 @@ func (hd Handler) GetOffersByApplicationIDHandler(w http.ResponseWriter, r *http
 	// Fetch loan offers based on application ID
 	offer, err := hd.Service.GetLoanOffers(ctx, "", applicationID.String(), "", "")
 	if err != nil {
-		slog.Error(utils.ErrRetrievingOffersFromApplicationID.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingOffersFromApplicationID.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrRetrievingOffersFromApplicationID.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -327,7 +324,7 @@ func (hd Handler) GetOffersByApplicationIDHandler(w http.ResponseWriter, r *http
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK) // Changed to StatusOK for successful retrieval
 	if err := json.NewEncoder(w).Encode(offer); err != nil {
-		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
@@ -348,7 +345,7 @@ func (hd Handler) GetLoanOffersHandler(w http.ResponseWriter, r *http.Request) {
 	// Retrieve user information
 	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
 	if err != nil {
-		slog.Error(utils.ErrRetrievingUser.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingUser.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrRetrievingUser.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -358,21 +355,17 @@ func (hd Handler) GetLoanOffersHandler(w http.ResponseWriter, r *http.Request) {
 	lenderID := query.Get(utils.RequestUserID)
 	status := query.Get(utils.Status)
 
-	// Authorization check: Non-admin users cannot access other user's data
-	if lenderID != "" && userInfo.UserRole != 3 && lenderID != userInfo.UserID {
+	// Authorization check using helper function
+	if err := hd.checkUserAuthorization(userInfo, lenderID, status); err != nil {
 		slog.Error(utils.ErrUnauthorized.Error())
-		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
-		return
-	} else if lenderID == "" && status != utils.StatusOpen && userInfo.UserRole != 3 {
-		slog.Error(utils.ErrUnauthorized.Error())
-		http.Error(w, utils.ErrUnauthorized.Error(), http.StatusUnauthorized)
+		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 
 	// Fetch loan offers based on query parameters
 	loanOffers, err := hd.Service.GetLoanOffers(ctx, "", "", lenderID, status)
 	if err != nil {
-		slog.Error(utils.ErrFailedToFetchLoanOffers.Error(), "error", err)
+		slog.Error(utils.ErrFailedToFetchLoanOffers.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToFetchLoanOffers.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -388,7 +381,7 @@ func (hd Handler) GetLoanOffersHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(loanOffers); err != nil {
-		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
@@ -410,7 +403,7 @@ func (hd Handler) AcceptOfferHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	offerID, err := uuid.Parse(vars[utils.OfferID])
 	if err != nil {
-		slog.Error(utils.ErrInvalidOfferID.Error(), "error", err)
+		slog.Error(utils.ErrInvalidOfferID.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrInvalidOfferID.Error(), http.StatusBadRequest)
 		return
 	}
@@ -418,7 +411,7 @@ func (hd Handler) AcceptOfferHandler(w http.ResponseWriter, r *http.Request) {
 	// Attempt to accept the loan offer
 	loan, err := hd.Service.AcceptOffer(ctx, offerID.String(), UserID)
 	if err != nil {
-		slog.Error(utils.ErrAcceptingOffer.Error(), "error", err)
+		slog.Error(utils.ErrAcceptingOffer.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrAcceptingOffer.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -427,7 +420,7 @@ func (hd Handler) AcceptOfferHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusAccepted)
 	if err := json.NewEncoder(w).Encode(loan); err != nil {
-		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
@@ -448,7 +441,7 @@ func (hd Handler) DisburseLoanHandler(w http.ResponseWriter, r *http.Request) {
 	// Retrieve user information from the database
 	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
 	if err != nil {
-		slog.Error(utils.ErrRetrievingUserByID.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingUserByID.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrRetrievingUserByID.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -457,7 +450,7 @@ func (hd Handler) DisburseLoanHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	offerID, err := uuid.Parse(vars[utils.OfferID])
 	if err != nil {
-		slog.Error(utils.ErrInvalidOfferID.Error(), "error", err)
+		slog.Error(utils.ErrInvalidOfferID.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrInvalidOfferID.Error(), http.StatusBadRequest)
 		return
 	}
@@ -465,7 +458,7 @@ func (hd Handler) DisburseLoanHandler(w http.ResponseWriter, r *http.Request) {
 	// Retrieve loan offers based on the offerID
 	offer, err := hd.Service.GetLoanOffers(ctx, offerID.String(), "", "", "")
 	if err != nil {
-		slog.Error(utils.ErrRetrievingOffersFromOfferID.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingOffersFromOfferID.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrRetrievingOffersFromOfferID.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -487,7 +480,7 @@ func (hd Handler) DisburseLoanHandler(w http.ResponseWriter, r *http.Request) {
 	// Attempt to disburse the loan
 	loan, err := hd.Service.DisburseLoan(ctx, userInfo.UserID, offerID.String())
 	if err != nil {
-		slog.Error(utils.ErrDisbursingLoan.Error(), "error", err)
+		slog.Error(utils.ErrDisbursingLoan.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrDisbursingLoan.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -496,7 +489,7 @@ func (hd Handler) DisburseLoanHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusAccepted)
 	if err := json.NewEncoder(w).Encode(loan); err != nil {
-		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
@@ -516,7 +509,7 @@ func (hd *Handler) GetLoanDetailsByIDHandler(w http.ResponseWriter, r *http.Requ
 
 	userInfo, err := hd.Service.GetUserByID(ctx, UserID)
 	if err != nil {
-		slog.Error(utils.ErrRetrievingUser.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingUser.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrRetrievingUser.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -535,7 +528,7 @@ func (hd *Handler) GetLoanDetailsByIDHandler(w http.ResponseWriter, r *http.Requ
 	// Fetch loan details using the service
 	loanDetails, err := hd.Service.GetLoanDetails(ctx, loanID, "", "", "", "", "")
 	if err != nil {
-		slog.Error(utils.ErrRetrievingLoanDetails.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingLoanDetails.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrRetrievingLoanDetails.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -558,7 +551,7 @@ func (hd *Handler) GetLoanDetailsByIDHandler(w http.ResponseWriter, r *http.Requ
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(loanDetails[0]); err != nil {
-		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
@@ -579,7 +572,7 @@ func (hd *Handler) GetLoanDetailsHandler(w http.ResponseWriter, r *http.Request)
 	// Fetch user information from the service
 	userInfo, err := hd.Service.GetUserByID(ctx, userID)
 	if err != nil {
-		slog.Error(utils.ErrRetrievingUserByID.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingUserByID.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrRetrievingUserByID.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -602,7 +595,7 @@ func (hd *Handler) GetLoanDetailsHandler(w http.ResponseWriter, r *http.Request)
 	// Fetch loan details based on provided parameters
 	loanDetails, err := hd.Service.GetLoanDetails(ctx, "", offerID, borrowerID, lenderID, status, applicationID)
 	if err != nil {
-		slog.Error(utils.ErrRetrievingLoanDetails.Error(), "error", err)
+		slog.Error(utils.ErrRetrievingLoanDetails.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrRetrievingLoanDetails.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -625,7 +618,7 @@ func (hd *Handler) GetLoanDetailsHandler(w http.ResponseWriter, r *http.Request)
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(loanDetails[0]); err != nil {
-		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
@@ -656,7 +649,7 @@ func (hd *Handler) CalculatePayableHandler(w http.ResponseWriter, r *http.Reques
 	// Calculate total payable amount
 	payableBreakdown, err := hd.Service.CalculateTotalPayable(ctx, loanID, userID)
 	if err != nil {
-		slog.Error(utils.ErrCalculatingTotalPayable.Error(), "error", err)
+		slog.Error(utils.ErrCalculatingTotalPayable.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrCalculatingTotalPayable.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -665,7 +658,7 @@ func (hd *Handler) CalculatePayableHandler(w http.ResponseWriter, r *http.Reques
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(payableBreakdown); err != nil {
-		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
 }
@@ -702,7 +695,7 @@ func (hd *Handler) SettleLoanHandler(w http.ResponseWriter, r *http.Request) {
 	// Call the SettleLoan service function
 	settledLoan, err := hd.Service.SettleLoan(ctx, userID, loanID)
 	if err != nil {
-		slog.Error(utils.ErrSettlingLoan.Error(), "error", err)
+		slog.Error(utils.ErrSettlingLoan.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrSettlingLoan.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -711,7 +704,17 @@ func (hd *Handler) SettleLoanHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
 	if err := json.NewEncoder(w).Encode(settledLoan); err != nil {
-		slog.Error(utils.ErrFailedToEncodeResponse.Error(), "error", err)
+		slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
+}
+
+// Helper function for authorization checks
+func (hd Handler) checkUserAuthorization(userInfo utils.User, requestUserID, status string) error {
+	if requestUserID != "" && userInfo.UserRole != 3 && requestUserID != userInfo.UserID {
+		return utils.ErrUnauthorized
+	} else if requestUserID == "" && status != utils.StatusOpen && userInfo.UserRole != 3 {
+		return utils.ErrUnauthorized
+	}
+	return nil
 }

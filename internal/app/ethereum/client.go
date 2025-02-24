@@ -10,8 +10,7 @@ import (
 
 var EthereumClient *ethclient.Client
 
-// InitEthereumClient initializes the Ethereum client using the provided RPC URL.
-// It returns a pointer to the ethclient.Client instance and an error if any occurs.
+// InitEthereumClient initializes the Ethereum client using the provided RPC URL. It returns a pointer to the ethclient.Client instance and an error if any occurs.
 func InitEthereumClient(rpcURL string) (*ethclient.Client, error) {
 	client, err := ethclient.Dial(rpcURL)
 	if err != nil {
@@ -19,6 +18,6 @@ func InitEthereumClient(rpcURL string) (*ethclient.Client, error) {
 	}
 	EthereumClient = client
 
-	slog.Info("Ethereum Client Started", "rpcURL", rpcURL)
+	slog.Info(utils.EthereumClientStarted, utils.RPCURLTag, rpcURL)
 	return EthereumClient, nil
 }

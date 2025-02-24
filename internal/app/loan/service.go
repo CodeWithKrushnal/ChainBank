@@ -65,29 +65,29 @@ func (sd service) TransferFunds(ctx context.Context, userID, recipientID, amount
 	// Get sender and recipient wallet IDs
 	senderWalletID, err := sd.walletRepo.GetWalletID(ctx, "", userID)
 	if err != nil {
-		return repo.Transaction{}, fmt.Errorf("%s: %w", utils.ErrSenderWalletNotFound, err)
+		return repo.Transaction{}, fmt.Errorf(utils.ErrorFormat, utils.ErrSenderWalletNotFound, err)
 	}
 
 	recipientWalletID, err := sd.walletRepo.GetWalletID(ctx, "", recipientID)
 	if err != nil {
-		return repo.Transaction{}, fmt.Errorf("%s: %w", utils.ErrRecipientWalletNotFound, err)
+		return repo.Transaction{}, fmt.Errorf(utils.ErrorFormat, utils.ErrRecipientWalletNotFound, err)
 	}
 
 	// Retrieve sender's private key
 	privateKeyHex, err := sd.walletRepo.RetrievePrivateKey(ctx, userID, senderWalletID)
 	if err != nil {
-		return repo.Transaction{}, fmt.Errorf("%s: %w", utils.ErrRetrievingPrivateKey, err)
+		return repo.Transaction{}, fmt.Errorf(utils.ErrorFormat, utils.ErrRetrievingPrivateKey, err)
 	}
 
 	privateKey, err := crypto.HexToECDSA(privateKeyHex)
 	if err != nil {
-		return repo.Transaction{}, fmt.Errorf("%s: %w", utils.ErrInvalidPrivateKey, err)
+		return repo.Transaction{}, fmt.Errorf(utils.ErrorFormat, utils.ErrInvalidPrivateKey, err)
 	}
 
 	// Convert amount
 	amount, success := new(big.Int).SetString(amountETH, 10)
 	if !success {
-		return repo.Transaction{}, fmt.Errorf("%s: %w", utils.ErrInvalidAmountFormat, err)
+		return repo.Transaction{}, fmt.Errorf(utils.ErrorFormat, utils.ErrInvalidAmountFormat, err)
 	}
 
 	// Set gas details and chain ID
@@ -100,20 +100,20 @@ func (sd service) TransferFunds(ctx context.Context, userID, recipientID, amount
 	// Transfer funds
 	signedTx, err := sd.ethRepo.TransferFunds(privateKeyHexStr, senderWalletID, recipientWalletID, amount, gasPrice, gasLimit, chainID)
 	if err != nil {
-		return repo.Transaction{}, fmt.Errorf("%s: %w", utils.ErrTransactionFailed, err)
+		return repo.Transaction{}, fmt.Errorf(utils.ErrorFormat, utils.ErrTransactionFailed, err)
 	}
 
 	// Send transaction
 	err = ethereum.EthereumClient.SendTransaction(context.Background(), signedTx)
 	if err != nil {
-		return repo.Transaction{}, fmt.Errorf("%s: %w", utils.ErrFailedToBroadcastTransaction, err)
+		return repo.Transaction{}, fmt.Errorf(utils.ErrorFormat, utils.ErrFailedToBroadcastTransaction, err)
 	}
 
 	// Get transaction receipt to fetch actual gas used
 	txHash := signedTx.Hash().Hex()
 	receipt, err := ethereum.EthereumClient.TransactionReceipt(ctx, signedTx.Hash())
 	if err != nil {
-		return repo.Transaction{}, fmt.Errorf("%s: %w", utils.ErrFailedToGetTransactionReceipt, err)
+		return repo.Transaction{}, fmt.Errorf(utils.ErrorFormat, utils.ErrFailedToGetTransactionReceipt, err)
 	}
 
 	// Calculate exact transaction fee
@@ -131,13 +131,13 @@ func (sd service) TransferFunds(ctx context.Context, userID, recipientID, amount
 
 	transaction, err := sd.walletRepo.AddTransaction(ctx, transactionID, senderWalletID, recipientWalletID, amountFloat, transactionType, status, txHash, feeFloat)
 	if err != nil {
-		return repo.Transaction{}, fmt.Errorf("%s: %w", utils.ErrAddingTransactionFailed, err)
+		return repo.Transaction{}, fmt.Errorf(utils.ErrorFormat, utils.ErrAddingTransactionFailed, err)
 	}
 
 	// Update sender's balance
 	balance1, err := ethereum.EthereumClient.BalanceAt(context.Background(), common.HexToAddress(senderWalletID), nil)
 	if err != nil {
-		return repo.Transaction{}, fmt.Errorf("%s: %w", utils.ErrFetchingBalanceFailed, err)
+		return repo.Transaction{}, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingBalanceFailed, err)
 	}
 	ethBalance1 := new(big.Float).Quo(new(big.Float).SetInt(balance1), big.NewFloat(1e18))
 	sd.walletRepo.UpdateBalance(ctx, senderWalletID, ethBalance1)
@@ -145,7 +145,7 @@ func (sd service) TransferFunds(ctx context.Context, userID, recipientID, amount
 	// Update recipient's balance
 	balance2, err := ethereum.EthereumClient.BalanceAt(context.Background(), common.HexToAddress(recipientWalletID), nil)
 	if err != nil {
-		return repo.Transaction{}, fmt.Errorf("%s: %w", utils.ErrFetchingBalanceFailed, err)
+		return repo.Transaction{}, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingBalanceFailed, err)
 	}
 	ethBalance2 := new(big.Float).Quo(new(big.Float).SetInt(balance2), big.NewFloat(1e18))
 	sd.walletRepo.UpdateBalance(ctx, recipientWalletID, ethBalance2)
@@ -158,22 +158,22 @@ func (sd service) CreateLoanapplication(ctx context.Context, borrowerID string, 
 	// Check if the borrower is KYC verified
 	borrowerIsVerified, err := sd.loanRepo.IsKYCVerified(ctx, borrowerID)
 	if err != nil {
-		return repo.Loanapplication{}, fmt.Errorf("%s: %w", utils.ErrKYCVerificationFailed, err)
+		return repo.Loanapplication{}, fmt.Errorf(utils.ErrorFormat, utils.ErrKYCVerificationFailed, err)
 	}
 
 	if !borrowerIsVerified {
-		return repo.Loanapplication{}, fmt.Errorf("%s", utils.ErrUserNotVerified)
+		return repo.Loanapplication{}, utils.ErrUserNotVerified
 	}
 
 	// Validate input parameters
 	if borrowerID == "" || amount <= 0 || interestRate <= 0 || termMonths <= 0 {
-		return repo.Loanapplication{}, fmt.Errorf("%s", utils.ErrInvalidInput)
+		return repo.Loanapplication{}, utils.ErrInvalidInput
 	}
 
 	// Create the loan application
 	createdLoan, err := sd.loanRepo.CreateLoanapplication(ctx, borrowerID, amount, interestRate, termMonths)
 	if err != nil {
-		return repo.Loanapplication{}, fmt.Errorf("%s: %w", utils.ErrCreatingLoanApplication, err)
+		return repo.Loanapplication{}, fmt.Errorf(utils.ErrorFormat, utils.ErrCreatingLoanApplication, err)
 	}
 
 	return createdLoan, nil
@@ -184,22 +184,22 @@ func (sd service) CreateLoanOffer(ctx context.Context, lenderID string, amount, 
 	// Check if the lender is KYC verified
 	lenderIsVerified, err := sd.loanRepo.IsKYCVerified(ctx, lenderID)
 	if err != nil {
-		return repo.LoanOffer{}, fmt.Errorf("%s: %w", utils.ErrKYCVerificationFailed, err)
+		return repo.LoanOffer{}, fmt.Errorf(utils.ErrorFormat, utils.ErrKYCVerificationFailed, err)
 	}
 
 	if !lenderIsVerified {
-		return repo.LoanOffer{}, fmt.Errorf("%s", utils.ErrUserNotKYCVerified)
+		return repo.LoanOffer{}, utils.ErrUserNotKYCVerified
 	}
 
 	// Validate input parameters
 	if lenderID == "" || amount <= 0 || interestRate <= 0 || termMonths <= 0 || applicationID == "" {
-		return repo.LoanOffer{}, fmt.Errorf("%s", utils.ErrInvalidInputParameters)
+		return repo.LoanOffer{}, utils.ErrInvalidInputParameters
 	}
 
 	// Create the loan offer
 	createdOffer, err := sd.loanRepo.CreateLoanOffer(ctx, lenderID, amount, interestRate, termMonths, applicationID)
 	if err != nil {
-		return repo.LoanOffer{}, fmt.Errorf("%s: %w", utils.ErrCreatingLoanOffer, err)
+		return repo.LoanOffer{}, fmt.Errorf(utils.ErrorFormat, utils.ErrCreatingLoanOffer, err)
 	}
 
 	return createdOffer, nil
@@ -210,7 +210,7 @@ func (sd service) GetLoanapplications(ctx context.Context, applicationID string,
 	// Fetch loan applications from the repository
 	loanApplications, err := sd.loanRepo.GetLoanapplications(ctx, applicationID, borrowerID, status)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", utils.ErrFetchingLoanApplications, err)
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingLoanApplications, err)
 	}
 	return loanApplications, nil
 }
@@ -220,7 +220,7 @@ func (sd service) GetLoanOffers(ctx context.Context, offerID string, application
 	// Fetch loan offers from the repository
 	loanOffers, err := sd.loanRepo.GetLoanOffers(ctx, offerID, applicationID, lenderID, status)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", utils.ErrFetchingLoanOffers, err)
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingLoanOffers, err)
 	}
 
 	return loanOffers, nil
@@ -231,7 +231,7 @@ func (sd service) GetLoanDetails(ctx context.Context, loanID, offerID, borrowerI
 	// Fetch loan details from the repository
 	loans, err := sd.loanRepo.GetLoanDetails(ctx, loanID, offerID, borrowerID, lenderID, status, applicationID)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", utils.ErrFetchingLoanDetails, err)
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingLoanDetails, err)
 	}
 
 	return loans, nil
@@ -242,13 +242,13 @@ func (sd service) GetUserByID(ctx context.Context, userID string) (utils.User, e
 	// Fetch detailed user information from the repository
 	detailedUser, err := sd.userRepo.GetuserByID(ctx, userID)
 	if err != nil {
-		return utils.User{}, fmt.Errorf("%s: %w", utils.ErrFetchingUserFromDB, err)
+		return utils.User{}, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingUserFromDB, err)
 	}
 
 	// Fetch the highest role of the user
 	role, err := sd.userRepo.GetUserHighestRole(ctx, userID)
 	if err != nil {
-		return utils.User{}, fmt.Errorf("%s: %w", utils.ErrFetchingUserRoleFromDB, err)
+		return utils.User{}, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingUserRoleFromDB, err)
 	}
 
 	// Return the user details along with their role
@@ -259,7 +259,7 @@ func (sd service) GetUserByID(ctx context.Context, userID string) (utils.User, e
 func (sd service) AcceptOffer(ctx context.Context, offerID, borrowerID string) (repo.LoanOffer, error) {
 	loan, err := sd.loanRepo.AcceptLoanOffer(ctx, offerID, borrowerID)
 	if err != nil {
-		return repo.LoanOffer{}, fmt.Errorf("%s: %w", utils.ErrAcceptingLoanOffer, err)
+		return repo.LoanOffer{}, fmt.Errorf(utils.ErrorFormat, utils.ErrAcceptingLoanOffer, err)
 	}
 	return loan, nil
 }
@@ -269,13 +269,13 @@ func (sd service) DisburseLoan(ctx context.Context, lenderID, offerID string) (r
 	// Fetch the loan offer based on the offerID
 	offer, err := sd.loanRepo.GetLoanOffers(ctx, offerID, "", "", "")
 	if err != nil {
-		return repo.Loan{}, fmt.Errorf("%s: %w", utils.ErrRetrievingOffer, err)
+		return repo.Loan{}, fmt.Errorf(utils.ErrorFormat, utils.ErrRetrievingOffer, err)
 	}
 
 	// Fetch the loan application associated with the offer
 	application, err := sd.GetLoanapplications(ctx, offer[0].ApplicationID.String(), "", "")
 	if err != nil {
-		return repo.Loan{}, fmt.Errorf("%s: %w", utils.ErrRetrievingApplication, err)
+		return repo.Loan{}, fmt.Errorf(utils.ErrorFormat, utils.ErrRetrievingApplication, err)
 	}
 
 	// Prepare the amount for transfer
@@ -284,7 +284,7 @@ func (sd service) DisburseLoan(ctx context.Context, lenderID, offerID string) (r
 	// Transfer funds from lender to borrower
 	transaction, err := sd.TransferFunds(ctx, offer[0].LenderID.String(), application[0].BorrowerID.String(), amountStr)
 	if err != nil {
-		return repo.Loan{}, fmt.Errorf("%s: %w", utils.ErrTransferFunds, err)
+		return repo.Loan{}, fmt.Errorf(utils.ErrorFormat, utils.ErrTransferFunds, err)
 	}
 
 	// Calculate the next payment date
@@ -293,7 +293,7 @@ func (sd service) DisburseLoan(ctx context.Context, lenderID, offerID string) (r
 	// Disburse the loan to the borrower
 	loan, err := sd.loanRepo.DisburseLoan(ctx, offer[0].OfferID.String(), application[0].BorrowerID.String(), offer[0].LenderID.String(), application[0].ApplicationID.String(), offer[0].Amount, offer[0].InterestRate, nextPaymentDate, transaction.TransactionID.String())
 	if err != nil {
-		return repo.Loan{}, fmt.Errorf("%s: %w", utils.ErrDisbursingLoan, err)
+		return repo.Loan{}, fmt.Errorf(utils.ErrorFormat, utils.ErrDisbursingLoan, err)
 	}
 
 	return loan, nil
@@ -308,24 +308,24 @@ func (sd service) CalculateTotalPayable(ctx context.Context, loanID, userID stri
 	// Fetch loan details
 	loanDetails, err := sd.loanRepo.GetLoanDetails(ctx, loanID, "", "", "", "", "")
 	if err != nil {
-		return PayableBreakdown{}, fmt.Errorf("%s: %w", utils.ErrFetchingLoanDetails, err)
+		return PayableBreakdown{}, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingLoanDetails, err)
 	}
 
 	if len(loanDetails) == 0 {
-		return PayableBreakdown{}, fmt.Errorf("%s", utils.ErrLoanDetailsNotFound)
+		return PayableBreakdown{}, utils.ErrLoanDetailsNotFound
 	}
 
 	loan = loanDetails[0]
 
 	// Check if user is either borrower or lender
 	if loan.BorrowerID != userID && loan.LenderID != userID {
-		return PayableBreakdown{}, fmt.Errorf("%s", utils.ErrUserNotBorrowerOrLender)
+		return PayableBreakdown{}, utils.ErrUserNotBorrowerOrLender
 	}
 
 	// Calculate interest till current date
 	startDate, err := time.Parse(time.RFC3339, loan.StartDate)
 	if err != nil {
-		return PayableBreakdown{}, fmt.Errorf("%s: %w", utils.ErrInvalidStartDateFormat, err)
+		return PayableBreakdown{}, fmt.Errorf(utils.ErrorFormat, utils.ErrInvalidStartDateFormat, err)
 	}
 	timeSinceStart := time.Since(startDate)
 	if timeSinceStart < 0 {
@@ -338,7 +338,7 @@ func (sd service) CalculateTotalPayable(ctx context.Context, loanID, userID stri
 	// Calculate penalty if current date exceeds next payment date
 	nextPaymentDate, err := time.Parse(time.RFC3339, loan.NextPaymentDate)
 	if err != nil {
-		return PayableBreakdown{}, fmt.Errorf("%s: %w", utils.ErrInvalidNextPaymentDateFormat, err)
+		return PayableBreakdown{}, fmt.Errorf(utils.ErrorFormat, utils.ErrInvalidNextPaymentDateFormat, err)
 	}
 	if time.Now().After(nextPaymentDate) {
 		monthsOverdue := int(time.Since(nextPaymentDate).Hours() / 24 / 30)
@@ -364,36 +364,36 @@ func (sd service) SettleLoan(ctx context.Context, userID, loanID string) (repo.L
 	// Fetch loan details
 	loanDetails, err := sd.loanRepo.GetLoanDetails(ctx, loanID, "", "", "", "", "")
 	if err != nil {
-		return repo.Loan{}, fmt.Errorf("%s: %w", utils.ErrFetchingLoanDetails, err)
+		return repo.Loan{}, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchingLoanDetails, err)
 	}
 
 	if len(loanDetails) == 0 {
-		return repo.Loan{}, fmt.Errorf("%s", utils.ErrLoanDetailsNotFound)
+		return repo.Loan{}, utils.ErrLoanDetailsNotFound
 	}
 
 	loan := loanDetails[0]
 
 	// Check if the user is the borrower
 	if loan.BorrowerID != userID {
-		return repo.Loan{}, fmt.Errorf("%s", utils.ErrUserNotBorrower)
+		return repo.Loan{}, utils.ErrUserNotBorrower
 	}
 
 	// Calculate total payable amount
 	payableBreakdown, err := sd.CalculateTotalPayable(ctx, loan.LoanID, userID)
 	if err != nil {
-		return repo.Loan{}, fmt.Errorf("%s: %w", utils.ErrCalculatingTotalPayable, err)
+		return repo.Loan{}, fmt.Errorf(utils.ErrorFormat, utils.ErrCalculatingTotalPayable, err)
 	}
 
 	// Initiate payment for TotalPayable
 	transaction, err := sd.TransferFunds(ctx, userID, loan.LenderID, strconv.FormatFloat(payableBreakdown.TotalPayable, 'f', 2, 64))
 	if err != nil {
-		return repo.Loan{}, fmt.Errorf("%s: %w", utils.ErrTransferFunds, err)
+		return repo.Loan{}, fmt.Errorf(utils.ErrorFormat, utils.ErrTransferFunds, err)
 	}
 
 	// Call SettleLoan function to update the database
 	settledLoan, err := sd.loanRepo.SettleLoan(ctx, loan.LoanID, payableBreakdown.TotalPayable, 0, transaction.TransactionID.String())
 	if err != nil {
-		return repo.Loan{}, fmt.Errorf("%s: %w", utils.ErrSettlingLoan, err)
+		return repo.Loan{}, fmt.Errorf(utils.ErrorFormat, utils.ErrSettlingLoan, err)
 	}
 
 	return settledLoan, nil

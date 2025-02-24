@@ -17,18 +17,18 @@ func main() {
 	ctx := context.Background()
 	postgresDB, ethClient, err := config.InitConfig(ctx)
 	if err != nil {
-		slog.Error(utils.ErrServiceInit.Error(), "error", err)
+		slog.Error(utils.ErrServiceInit.Error(), utils.ErrorTag, err)
 		return
 	}
 	defer func() {
 		if err := config.ReleaseConfig(ctx, postgresDB); err != nil {
-			slog.Error("Error releasing configuration", "error", err)
+			slog.Error(utils.ErrReleaseConfig.Error(), utils.ErrorTag, err)
 		}
 	}()
 
 	deps, err := app.NewDependencies(ctx, postgresDB, ethClient)
 	if err != nil {
-		slog.Error(utils.ErrServiceInit.Error(), "error", err)
+		slog.Error(utils.ErrServiceInit.Error(), utils.ErrorTag, err)
 		return
 	}
 

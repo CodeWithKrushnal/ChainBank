@@ -74,4 +74,6 @@ const (
 	BothKYCIDAndUserEmailProvided                           = "Both kyc_id and user_email are provided"
 	UserInfoNotFoundInContext                               = "user info not found in context"
 	LogRetrievingTransactions                               = "Retrieving transactions for user"
+	EthereumClientStarted                                   = "Ethereum Client Started"
+	ErrorFormat                                             = "%s: %w" // Format string for wrapping errors
 )
