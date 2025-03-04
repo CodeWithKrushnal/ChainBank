@@ -10,6 +10,8 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/CodeWithKrushnal/ChainBank/utils"
@@ -48,6 +50,7 @@ type Transaction struct {
 
 type WalletRepo struct {
 	DB *sql.DB
+	configDetails utils.ConfigStruct
 }
 
 type WalletStorer interface {
@@ -62,8 +65,8 @@ type WalletStorer interface {
 }
 
 // Constructor function
-func NewWalletRepo(db *sql.DB) WalletStorer {
-	return &WalletRepo{DB: db}
+func NewWalletRepo(db *sql.DB, configDetails utils.ConfigStruct) WalletStorer {
+	return &WalletRepo{DB: db, configDetails: configDetails}
 }
 
 // GetWalletID retrieves the wallet ID based on the provided email or userID. It prioritizes userID if both are provided.
@@ -441,4 +444,65 @@ func (repo *WalletRepo) GetTransactions(ctx context.Context, transactionID uuid.
 	}
 
 	return transactions, nil
+}
+
+func (repoDep *WalletRepo) GetTransactionStats(ctx context.Context, senderID, receiverID string, fromTime, toTime *time.Time, column string, count, avg, unique, min, max, sum bool) (interface{}, error) {
+	var query string
+	var args []interface{}
+
+	// Start building the query
+	query = "SELECT "
+
+	var aggregates []string
+
+	if count {
+		aggregates = append(aggregates, "COUNT("+column+")")
+	}
+	if avg {
+		aggregates = append(aggregates, "AVG("+column+")")
+	}
+	if unique {
+		aggregates = append(aggregates, "COUNT(DISTINCT "+column+")")
+	}
+	if min {
+		aggregates = append(aggregates, "MIN("+column+")")
+	}
+	if max {
+		aggregates = append(aggregates, "MAX("+column+")")
+	}
+	if sum {
+		aggregates = append(aggregates, "SUM("+column+")")
+	}
+
+	if len(aggregates) == 0 {
+		return nil, fmt.Errorf("at least one aggregate function must be specified")
+	}
+
+	query += strings.Join(aggregates, ", ") + " FROM transactions WHERE 1=1"
+
+	if senderID != "" {
+		query += " AND sender_wallet_id = $1"
+		args = append(args, senderID)
+	}
+	if receiverID != "" {
+		query += " AND receiver_wallet_id = $2"
+		args = append(args, receiverID)
+	}
+	if fromTime != nil {
+		query += " AND created_at >= $" + strconv.Itoa(len(args)+1)
+		args = append(args, fromTime)
+	}
+	if toTime != nil {
+		query += " AND created_at <= $" + strconv.Itoa(len(args)+1)
+		args = append(args, toTime)
+	}
+
+	// Execute the query
+	row := repoDep.DB.QueryRowContext(ctx, query, args...)
+	var result interface{}
+	if err := row.Scan(&result); err != nil {
+		return nil, fmt.Errorf("error retrieving transaction stats: %w", err)
+	}
+
+	return result, nil
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/CodeWithKrushnal/ChainBank/internal/app"
 	"github.com/CodeWithKrushnal/ChainBank/internal/config"
 	"github.com/CodeWithKrushnal/ChainBank/utils"
+	"github.com/rs/cors"
 	"golang.org/x/exp/slog"
 )
 
@@ -15,7 +16,10 @@ import (
 func main() {
 	// Config Setup
 	ctx := context.Background()
-	postgresDB, ethClient, err := config.InitConfig(ctx)
+	var ConfigDetails utils.ConfigStruct
+	configDetails, postgresDB, ethClient, err := config.InitConfig(ctx)
+	ConfigDetails = configDetails
+
 	if err != nil {
 		slog.Error(utils.ErrServiceInit.Error(), utils.ErrorTag, err)
 		return
@@ -26,15 +30,27 @@ func main() {
 		}
 	}()
 
-	deps, err := app.NewDependencies(ctx, postgresDB, ethClient)
+	deps, err := app.NewDependencies(ctx, postgresDB, ethClient, ConfigDetails)
 	if err != nil {
 		slog.Error(utils.ErrServiceInit.Error(), utils.ErrorTag, err)
 		return
 	}
 
+	// Enable CORS for all origins, you can also customize this
+	corsHandler := cors.New(cors.Options{
+		AllowedOrigins: []string{"*"}, 
+		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowedHeaders: []string{"Content-Type", "Authorization"},
+		Debug:          true,
+	})
+
 	router := app.SetupRoutes(ctx, deps)
+
+	// Wrap your router with the CORS handler
+	handler := corsHandler.Handler(router)
+
 	slog.Info(utils.ServerStartLog)
-	log.Fatal(http.ListenAndServe(":8080", router))
+	log.Fatal(http.ListenAndServe(":8080", handler))
 }
 
 // Creates a Superuser along with Server Initialization
@@ -80,7 +96,4 @@ func main() {
 
 // Add Necessary comments,  logs - use const strings use slog use standerd error and message strings and define them, in case of errors propogate error by returning do not log errors. Remove unnecessary, redundent logs
 
-
 // Add Necessary comments,  logs - use const strings use slog use standerd error and message strings and define them, in case of errors log the received errors from the called functions. Remove unnecessary, redundent logs
-
-

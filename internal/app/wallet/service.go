@@ -5,6 +5,8 @@ import (
 	"crypto/ecdsa"
 	"fmt"
 	"math/big"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -19,9 +21,10 @@ import (
 )
 
 type service struct {
-	userRepo   repo.UserStorer
-	walletRepo repo.WalletStorer
-	ethRepo    ethereum.EthRepo
+	userRepo      repo.UserStorer
+	walletRepo    repo.WalletStorer
+	ethRepo       ethereum.EthRepo
+	configDetails utils.ConfigStruct
 }
 
 type Service interface {
@@ -36,11 +39,12 @@ type Service interface {
 }
 
 // Constructor function
-func NewService(ctx context.Context, userRepo repo.UserStorer, walletRepo repo.WalletStorer, ethRepo ethereum.EthRepo) Service {
+func NewService(ctx context.Context, userRepo repo.UserStorer, walletRepo repo.WalletStorer, ethRepo ethereum.EthRepo, configDetails utils.ConfigStruct) Service {
 	return service{
-		userRepo:   userRepo,
-		walletRepo: walletRepo,
-		ethRepo:    ethRepo,
+		userRepo:      userRepo,
+		walletRepo:    walletRepo,
+		ethRepo:       ethRepo,
+		configDetails: configDetails,
 	}
 }
 
@@ -201,14 +205,14 @@ func (sd service) TransferFunds(ctx context.Context, userInfo utils.User, req Tr
 		return repo.Transaction{}, nil, err
 	}
 
-	// Convert amount from string to big.Int
-	amount, success := new(big.Int).SetString(req.AmountETH, 10)
-	if !success {
+	// Convert amount from string to big.Int, handling decimal points
+	amount, err := parseAmountWithDecimal(req.AmountETH)
+	if err != nil {
 		return repo.Transaction{}, nil, fmt.Errorf(utils.ErrorFormat, utils.ErrInvalidAmountFormat, err)
 	}
 
 	// Set gas details and chain ID
-	gasPrice := big.NewInt(20000000000) // 20 Gwei
+	gasPrice := big.NewInt(200) // 20 Gwei
 	gasLimit := uint64(21000)
 	chainID := big.NewInt(1337) // Ganache
 
@@ -335,4 +339,43 @@ func (sd service) GetUserByID(ctx context.Context, userID string) (utils.User, e
 
 	// Return the user details including ID, email, and role
 	return utils.User{UserID: detailedUser.ID, UserEmail: detailedUser.Email, UserRole: role}, nil
+}
+
+func parseAmountWithDecimal(amountStr string) (*big.Int, error) {
+	if !strings.Contains(amountStr, ".") {
+		// No decimal point, parse directly as integer
+		amount, success := new(big.Int).SetString(amountStr, 10)
+		if !success {
+			return nil, fmt.Errorf("failed to parse integer amount: %s", amountStr)
+		}
+		return amount, nil
+	}
+
+	parts := strings.Split(amountStr, ".")
+	if len(parts) != 2 {
+		return nil, fmt.Errorf("invalid decimal format: %s", amountStr)
+	}
+
+	integerPart, success := new(big.Int).SetString(parts[0], 10)
+	if !success {
+		return nil, fmt.Errorf("failed to parse integer part: %s", parts[0])
+	}
+
+	decimalPartStr := parts[1]
+	decimalPart, err := strconv.ParseUint(decimalPartStr, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse decimal part: %s", decimalPartStr)
+	}
+
+	// Calculate the power of 10 based on the length of the decimal part
+	decimalPlaces := len(decimalPartStr)
+	powerOf10 := new(big.Int).Exp(big.NewInt(10), big.NewInt(int64(decimalPlaces)), nil)
+
+	// Multiply the integer part by the power of 10
+	integerPart.Mul(integerPart, powerOf10)
+
+	// Add the decimal part
+	integerPart.Add(integerPart, new(big.Int).SetUint64(decimalPart))
+
+	return integerPart, nil
 }

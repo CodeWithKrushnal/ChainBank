@@ -18,7 +18,7 @@ func InitDB(connString string) (*sql.DB, error) {
 	var err error
 	db, err = sql.Open("postgres", connString)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", utils.ErrConfigInit, err)
+		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrConfigInit, err)
 	}
 
 	// Check if the database is reachable

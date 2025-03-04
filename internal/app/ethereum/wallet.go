@@ -18,11 +18,12 @@ import (
 
 type ethRepo struct {
 	ethereumClient *ethclient.Client
+	configDetails utils.ConfigStruct
 }
 
 // Constructor function
-func NewEthRepo(ethereumClient *ethclient.Client) EthRepo {
-	return &ethRepo{ethereumClient: ethereumClient}
+func NewEthRepo(ethereumClient *ethclient.Client, configDetails utils.ConfigStruct) EthRepo {
+	return &ethRepo{ethereumClient: ethereumClient, configDetails:configDetails}
 }
 
 // EthRepo interface

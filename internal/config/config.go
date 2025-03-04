@@ -17,19 +17,7 @@ import (
 	"github.com/spf13/viper"
 )
 
-type ConfigStruct struct {
-	DatabaseURL       string `mapstructure:"DATABASE_URL"`
-	DatabaseUsername  string `mapstructure:"DB_USERNAME"`
-	DatabasePassword  string `mapstructure:"DB_PASSWORD"`
-	EthereumRPC       string `mapstructure:"ETHEREUM_RPC"`
-	JWTSecretKey      string `mapstructure:"JWT_SECRET"`
-	JWTResetSecretKey string `mapstructure:"JWT_RESET_SECRET"`
-	SuperUserEmail    string `mapstructure:"SUPER_USER_EMAIL"`
-	SuperUserPassword string `mapstructure:"SUPER_USER_PASSWORD"`
-	SendGridAPIKey    string `mapstructure:"SENDGRID_API_KEY"`
-}
 
-var ConfigDetails ConfigStruct
 
 type Dependencies struct {
 	PostgresDB *sql.DB
@@ -37,37 +25,39 @@ type Dependencies struct {
 }
 
 // Inintialize all Configurations for the Server
-func InitConfig(ctx context.Context) (*sql.DB, *ethclient.Client, error) {
+func InitConfig(ctx context.Context) (utils.ConfigStruct, *sql.DB, *ethclient.Client, error) {
 	// Load configuration from environment variables or file
-	ConfigDetails, err := LoadConfig("")
+	configDetails, err := LoadConfig("")
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: %v", utils.ErrConfigInit, err)
+		return utils.ConfigStruct{},nil, nil, fmt.Errorf("%w: %v", utils.ErrConfigInit, err)
 	}
 
 	// Check for missing required configuration values
-	if len(ConfigDetails.DatabaseURL) == 0 || len(ConfigDetails.DatabasePassword) == 0 ||
-		len(ConfigDetails.DatabaseUsername) == 0 || len(ConfigDetails.EthereumRPC) == 0 ||
-		len(ConfigDetails.JWTSecretKey) == 0 || len(ConfigDetails.JWTResetSecretKey) == 0 ||
-		len(ConfigDetails.SuperUserEmail) == 0 || len(ConfigDetails.SuperUserPassword) == 0 {
-		return nil, nil, fmt.Errorf("%w: missing environment variable or file", utils.ErrConfigInit)
+	if len(configDetails.DatabaseURL) == 0 || len(configDetails.DatabasePassword) == 0 ||
+		len(configDetails.DatabaseUsername) == 0 || len(configDetails.EthereumRPC) == 0 ||
+		len(configDetails.JWTSecretKey) == 0 || len(configDetails.JWTResetSecretKey) == 0 ||
+		len(configDetails.SuperUserEmail) == 0 || len(configDetails.SuperUserPassword) == 0 ||
+		len(configDetails.SMTPHost) == 0 || len(configDetails.SMTPPort) == 0 ||
+		len(configDetails.SenderEmail) == 0 || len(configDetails.SenderPassword) == 0 {
+		return utils.ConfigStruct{}, nil, nil, fmt.Errorf("%w: missing environment variable or file", utils.ErrConfigInit)
 	}
 
 	// Start DB Connection
-	ConfigDetails.DatabaseURL = strings.Replace(ConfigDetails.DatabaseURL, "user", ConfigDetails.DatabaseUsername, 1)
-	ConfigDetails.DatabaseURL = strings.Replace(ConfigDetails.DatabaseURL, "password", ConfigDetails.DatabasePassword, 1)
+	configDetails.DatabaseURL = strings.Replace(configDetails.DatabaseURL, "user", configDetails.DatabaseUsername, 1)
+	configDetails.DatabaseURL = strings.Replace(configDetails.DatabaseURL, "password", configDetails.DatabasePassword, 1)
 
-	postgresDB, err := repo.InitDB(ConfigDetails.DatabaseURL)
+	postgresDB, err := repo.InitDB(configDetails.DatabaseURL)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: failed to connect to database", utils.ErrConfigInit)
+		return utils.ConfigStruct{}, nil, nil, fmt.Errorf("%w: failed to connect to database", utils.ErrConfigInit)
 	}
 
 	// Initialize Ethereum Client
-	ethClient, err := ethereum.InitEthereumClient(ConfigDetails.EthereumRPC)
+	ethClient, err := ethereum.InitEthereumClient(configDetails.EthereumRPC)
 	if err != nil {
-		return nil, nil, fmt.Errorf("%w: error connecting to Ethereum RPC server", utils.ErrConfigInit)
+		return utils.ConfigStruct{}, nil, nil, fmt.Errorf("%w: error connecting to Ethereum RPC server", utils.ErrConfigInit)
 	}
 
-	return postgresDB, ethClient, nil
+	return configDetails, postgresDB, ethClient, nil
 }
 
 func ReleaseConfig(ctx context.Context, db *sql.DB) error {
@@ -79,7 +69,7 @@ func PrivateKeyToHex(privateKey *ecdsa.PrivateKey) string {
 	return hex.EncodeToString(privateKeyBytes)      // Convert to hex string
 }
 
-func LoadConfig(path string) (config ConfigStruct, err error) {
+func LoadConfig(path string) (config utils.ConfigStruct, err error) {
 	viper.AddConfigPath("./")
 	viper.SetConfigName("app")
 	viper.SetConfigType("env")

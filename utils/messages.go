@@ -76,4 +76,11 @@ const (
 	LogRetrievingTransactions                               = "Retrieving transactions for user"
 	EthereumClientStarted                                   = "Ethereum Client Started"
 	ErrorFormat                                             = "%s: %w" // Format string for wrapping errors
+	VerificationEmailSentSuccessfully                       = "Verification email sent successfully"
+	LogGenerateEmailVerificationRequest                     = "Generate Email Verification Request Received"
+	LogFetchingRequestLogs                                  = "Fetching request logs"
+	ErrFetchingRequestLogs                                  = "Failed to fetch request logs"
+	LogFetchingRequestLogStats                              = "Fetching request log statistics"
+	LogFetchingUserDetails                                  = "Fetching user details"
+	LogFetchingTransactionStats                             = "Fetching transaction statistics"
 )

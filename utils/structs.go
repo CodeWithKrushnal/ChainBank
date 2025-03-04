@@ -6,6 +6,33 @@ type User struct {
 	UserRole  int
 }
 
+type UserInfo struct {
+	UserID   string `json:"user_id"`
+	Username string `json:"username"`
+	FullName string `json:"full_name"`
+	Email    string `json:"email"`
+	WalletID string `json:"wallet_id"`
+	Role     int    `json:"role"`
+}
+
+type ConfigStruct struct {
+	DatabaseURL       string `mapstructure:"DATABASE_URL"`
+	DatabaseUsername  string `mapstructure:"DB_USERNAME"`
+	DatabasePassword  string `mapstructure:"DB_PASSWORD"`
+	EthereumRPC       string `mapstructure:"ETHEREUM_RPC"`
+	JWTSecretKey      string `mapstructure:"JWT_SECRET"`
+	JWTResetSecretKey string `mapstructure:"JWT_RESET_SECRET"`
+	SuperUserEmail    string `mapstructure:"SUPER_USER_EMAIL"`
+	SuperUserPassword string `mapstructure:"SUPER_USER_PASSWORD"`
+	SendGridAPIKey    string `mapstructure:"SENDGRID_API_KEY"`
+	SMTPHost          string `mapstructure:"SMTP_HOST"`
+	SMTPPort          string `mapstructure:"SMTP_PORT"`
+	SenderEmail       string `mapstructure:"SENDER_EMAIL"`
+	SenderPassword    string `mapstructure:"SENDER_PASSWORD"`
+	EtherscanAPI      string `mapstructure:"ETHERSCAN_API"`
+	EtherscanAPIKey   string `mapstructure:"ETHERSCAN_API_KEY"`
+}
+
 const (
 	ContentTypeJSON               = "application/json"
 	ContentTypeHeader             = "Content-Type"
@@ -43,6 +70,7 @@ const (
 	StatusClosed                  = "closed"
 	StatusPending                 = "pending"
 	StatusApproved                = "approved"
+	StatusAccepted                = "Accepted"
 	StatusRejected                = "rejected"
 	StatusCancelled               = "cancelled"
 	StatusCompleted               = "completed"
@@ -83,8 +111,8 @@ const (
 	KYCVerificationWarning        = "kyc_verification_warning"
 	KYCVerificationSuccess        = "kyc_verification_success"
 	KYCID                         = "kyc_id"
-	Verified                      = "verified"
-	Unverified                    = "unverified"
+	Verified                      = "Verified"
+	Unverified                    = "Unverified"
 	ErrorTag                      = "error"
 	ErrorMessageTag               = "error_message"
 	WarningTag                    = "warning"

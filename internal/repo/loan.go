@@ -13,11 +13,12 @@ import (
 
 type loanRepo struct {
 	DB *sql.DB
+	configDetails utils.ConfigStruct
 }
 
 // Constructor function
-func NewLoanRepo(db *sql.DB) LoanStorer {
-	return &loanRepo{DB: db}
+func NewLoanRepo(db *sql.DB, configDetails utils.ConfigStruct) LoanStorer {
+	return &loanRepo{DB: db, configDetails: configDetails}
 }
 
 type LoanStorer interface {
@@ -43,7 +44,7 @@ const (
 	createLoanapplicationQuery            = `INSERT INTO loan_applications (application_id, borrower_id, amount, interest_rate, term_months, status) VALUES ($1, $2, $3, $4, $5, 'open') RETURNING application_id, borrower_id, amount, interest_rate, term_months, status, created_at, updated_at`
 	getLoanOffersQuery                    = `SELECT offer_id, lender_id, amount, interest_rate, loan_term_months, status, created_at, application_id FROM loan_offers WHERE 1=1`
 	getLoanapplicationsQuery              = `SELECT application_id, borrower_id, amount, interest_rate, term_months, status, created_at, updated_at FROM loan_applications WHERE 1=1`
-	settleLoanQuery                       = `UPDATE loans SET settled_amount = $1, accrued_interest = $2, settlement_date = NOW(), remaining_principle = 0, status = 'closed' WHERE loan_id = $3 RETURNING loan_id, offer_id, borrower_id, lender_id, total_principle, remaining_principle, status, start_date, next_payment_date, application_id, interest_rate, settled_amount, settlement_date, accrued_interest`
+	settleLoanQuery                       = `UPDATE loans SET settled_amount = $1, accrued_interest = $2, settlement_transaction_id=$3, settlement_date = NOW(), remaining_principle = 0, status = 'closed' WHERE loan_id = $4 RETURNING loan_id, offer_id, borrower_id, lender_id, total_principle, remaining_principle, status, start_date, next_payment_date, application_id, interest_rate, settled_amount, settlement_date, accrued_interest, disbursement_transaction_id, settlement_transaction_id`
 	isKYCVerifiedQuery                    = `SELECT EXISTS (SELECT 1 FROM kyc_verifications WHERE user_id = $1 AND verification_status = 'Verified')`
 	DisburseLoanOffersUpdationQuery       = `UPDATE loan_offers SET status = 'Funded' WHERE offer_id = $1`
 	DisburseLoanApplicationsUpdationQuery = `UPDATE loan_applications SET status = 'Funded' WHERE application_id = $1`
@@ -452,12 +453,12 @@ func (rd *loanRepo) SettleLoan(ctx context.Context, loanID string, settledAmount
 	}
 
 	// Execute the update query to settle the loan and scan the result into the loan struct
-	err = tx.QueryRowContext(ctx, settleLoanQuery, settledAmount, accruedInterest, loanID).Scan(
+	err = tx.QueryRowContext(ctx, settleLoanQuery, settledAmount, accruedInterest, settlementTransactionID, loanID).Scan(
 		&loan.LoanID, &loan.OfferID, &loan.BorrowerID, &loan.LenderID, 
 		&loan.TotalPrinciple, &loan.RemainingPrinciple, &loan.Status,
 		&loan.StartDate, &loan.NextPaymentDate, &loan.ApplicationID,
 		&loan.InterestRate, &loan.SettledAmount, &loan.SettlementDate,
-		&loan.AccruedInterest,
+		&loan.AccruedInterest, &loan.DisbursementTransactionID, &loan.SettlementTransactionID,	
 	)
 
 	if err != nil {

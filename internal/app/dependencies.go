@@ -24,18 +24,18 @@ type Dependencies struct {
 
 // NewDependencies initializes all dependencies
 // NewDependencies initializes all the necessary services and repositories for the application.
-func NewDependencies(ctx context.Context, db *sql.DB, ethClient *ethclient.Client) (*Dependencies, error) {
+func NewDependencies(ctx context.Context, db *sql.DB, ethClient *ethclient.Client, configDetails utils.ConfigStruct) (*Dependencies, error) {
 	// Initialize repositories
-	userRepo := repo.NewUserRepo(db)
-	walletRepo := repo.NewWalletRepo(db)
-	loanRepo := repo.NewLoanRepo(db)
-	ethRepo := ethereum.NewEthRepo(ethClient)
+	userRepo := repo.NewUserRepo(db, configDetails)
+	walletRepo := repo.NewWalletRepo(db, configDetails)
+	loanRepo := repo.NewLoanRepo(db, configDetails)
+	ethRepo := ethereum.NewEthRepo(ethClient, configDetails)
 
 	// Initialize services
-	userService := user.NewService(ctx, userRepo, walletRepo, ethRepo)
-	walletService := wallet.NewService(ctx, userRepo, walletRepo, ethRepo)
-	loanService := loan.NewService(ctx, userRepo, walletRepo, loanRepo, ethRepo)
-	middlewareService := middleware.NewService(ctx, userRepo, walletRepo)
+	userService := user.NewService(ctx, userRepo, walletRepo, ethRepo, configDetails)
+	walletService := wallet.NewService(ctx, userRepo, walletRepo, ethRepo, configDetails)
+	loanService := loan.NewService(ctx, userRepo, walletRepo, loanRepo, ethRepo, configDetails)
+	middlewareService := middleware.NewService(ctx, userRepo, walletRepo, configDetails)
 
 	// Check if services are initialized correctly
 	if userService == nil || walletService == nil || loanService == nil || middlewareService == nil {

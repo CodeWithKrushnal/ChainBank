@@ -3,48 +3,14 @@ package middleware
 import (
 	"bytes"
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"strings"
 
-	"github.com/CodeWithKrushnal/ChainBank/internal/config"
-	"github.com/golang-jwt/jwt/v5"
 )
 
-func ValidateJWT(tokenString string, originIP string) (string, error) {
 
-	JWT_SECRET := []byte(config.ConfigDetails.JWTSecretKey)
-
-	// Parse token
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, errors.New("unexpected signing method")
-		}
-		return JWT_SECRET, nil
-	})
-
-	if err != nil {
-		return "", err
-	}
-
-	// Extract claims
-	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-		userEmail, ok := claims["email"].(string)
-		if !ok {
-			return "", fmt.Errorf("invalid token claims")
-		}
-
-		if claims["origin"].(string) != originIP {
-			return "", fmt.Errorf("Token is invalid : invalid Token Origin")
-		}
-		return userEmail, nil
-	}
-
-	return "", errors.New("invalid token")
-}
 
 type Handler struct {
 	service Service
@@ -76,8 +42,15 @@ func AuthMiddleware(authDep Handler) func(http.Handler) http.Handler {
 				return
 			}
 
+			var originIP string
+			if strings.HasPrefix(r.RemoteAddr, "[::1]:") {
+				originIP = "127.0.0.1"
+			}else{
+				originIP=r.RemoteAddr
+			}
+
 			// Validate token
-			userEmail, err := ValidateJWT(tokenParts[1], r.RemoteAddr)
+			userEmail, err := authDep.service.ValidateJWT(tokenParts[1], originIP)
 			if err != nil {
 				http.Error(w, "Unauthorized: Invalid Token", http.StatusUnauthorized)
 				return

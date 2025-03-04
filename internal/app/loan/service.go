@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/big"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/CodeWithKrushnal/ChainBank/internal/app/ethereum"
@@ -21,15 +22,17 @@ type service struct {
 	walletRepo repo.WalletStorer
 	loanRepo   repo.LoanStorer
 	ethRepo    ethereum.EthRepo
+	configDetails utils.ConfigStruct
 }
 
 // Constructor function
-func NewService(ctx context.Context, userRepo repo.UserStorer, walletRepo repo.WalletStorer, loanRepo repo.LoanStorer, ethRepo ethereum.EthRepo) Service {
+func NewService(ctx context.Context, userRepo repo.UserStorer, walletRepo repo.WalletStorer, loanRepo repo.LoanStorer, ethRepo ethereum.EthRepo, configDetails utils.ConfigStruct) Service {
 	return service{
 		userRepo:   userRepo,
 		walletRepo: walletRepo,
 		loanRepo:   loanRepo,
 		ethRepo:    ethRepo,
+		configDetails: configDetails,
 	}
 }
 
@@ -83,10 +86,10 @@ func (sd service) TransferFunds(ctx context.Context, userID, recipientID, amount
 	if err != nil {
 		return repo.Transaction{}, fmt.Errorf(utils.ErrorFormat, utils.ErrInvalidPrivateKey, err)
 	}
-
+	
 	// Convert amount
-	amount, success := new(big.Int).SetString(amountETH, 10)
-	if !success {
+	amount, err := parseAndRoundAmount(amountETH)
+	if err != nil {
 		return repo.Transaction{}, fmt.Errorf(utils.ErrorFormat, utils.ErrInvalidAmountFormat, err)
 	}
 
@@ -397,4 +400,39 @@ func (sd service) SettleLoan(ctx context.Context, userID, loanID string) (repo.L
 	}
 
 	return settledLoan, nil
+}
+
+
+func parseAndRoundAmount(amountStr string) (*big.Int, error) {
+	if !strings.Contains(amountStr, ".") {
+			// No decimal point, parse directly as integer
+			amount, success := new(big.Int).SetString(amountStr, 10)
+			if !success {
+					return nil, fmt.Errorf("failed to parse integer amount: %s", amountStr)
+			}
+			return amount, nil
+	}
+
+	parts := strings.Split(amountStr, ".")
+	if len(parts) != 2 {
+			return nil, fmt.Errorf("invalid decimal format: %s", amountStr)
+	}
+
+	integerPart, success := new(big.Int).SetString(parts[0], 10)
+	if !success {
+			return nil, fmt.Errorf("failed to parse integer part: %s", parts[0])
+	}
+
+	decimalPartStr := parts[1]
+	decimalPart, err := strconv.ParseUint(decimalPartStr, 10, 64)
+	if err != nil {
+			return nil, fmt.Errorf("failed to parse decimal part: %s", decimalPartStr)
+	}
+
+	if decimalPart > 0 {
+			// Round up by adding 1 to the integer part
+			integerPart.Add(integerPart, big.NewInt(1))
+	}
+
+	return integerPart, nil
 }

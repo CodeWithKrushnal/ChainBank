@@ -2,6 +2,7 @@ package loan
 
 import (
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -76,6 +77,10 @@ func (hd Handler) CreateLoanApplicationHandler(w http.ResponseWriter, r *http.Re
 	loanapplication, err := hd.Service.CreateLoanapplication(ctx, UserID, payload.Amount, payload.InterestRate, payload.TermMonths)
 	if err != nil {
 		slog.Error(utils.ErrCreateLoanApplication.Error(), utils.ErrorTag, err)
+		if errors.Is(err, utils.ErrUserNotVerified) {
+			http.Error(w, utils.ErrUserNotVerified.Error(), http.StatusForbidden)
+			return
+		}
 		http.Error(w, utils.ErrCreateLoanApplication.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -464,7 +469,7 @@ func (hd Handler) DisburseLoanHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Check if the offer status is accepted
-	if len(offer) == 0 || offer[0].Status != utils.StatusApproved {
+	if len(offer) == 0 || offer[0].Status != utils.StatusAccepted {
 		slog.Error(utils.ErrOfferNotAccepted.Error())
 		http.Error(w, utils.ErrOfferNotAccepted.Error(), http.StatusBadRequest)
 		return
@@ -587,8 +592,8 @@ func (hd *Handler) GetLoanDetailsHandler(w http.ResponseWriter, r *http.Request)
 
 	// Validate that at least one parameter is provided
 	if offerID == "" && applicationID == "" && borrowerID == "" && lenderID == "" && status == "" {
-		slog.Error(utils.ErrMissingParameters.Error()) // Use standard error message
-		http.Error(w, utils.ErrMissingParameters.Error(), http.StatusBadRequest)
+		slog.Error(utils.ErrMissingParametersLoan.Error())
+		http.Error(w, utils.ErrMissingParametersLoan.Error(), http.StatusBadRequest)
 		return
 	}
 
@@ -617,7 +622,7 @@ func (hd *Handler) GetLoanDetailsHandler(w http.ResponseWriter, r *http.Request)
 	// Respond with JSON data
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
 	w.WriteHeader(http.StatusOK)
-	if err := json.NewEncoder(w).Encode(loanDetails[0]); err != nil {
+	if err := json.NewEncoder(w).Encode(loanDetails); err != nil {
 		slog.Error(utils.ErrFailedToEncodeResponse.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFailedToEncodeResponse.Error(), http.StatusInternalServerError)
 	}
