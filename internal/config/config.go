@@ -17,8 +17,6 @@ import (
 	"github.com/spf13/viper"
 )
 
-
-
 type Dependencies struct {
 	PostgresDB *sql.DB
 	EthClient  *ethclient.Client
@@ -29,7 +27,7 @@ func InitConfig(ctx context.Context) (utils.ConfigStruct, *sql.DB, *ethclient.Cl
 	// Load configuration from environment variables or file
 	configDetails, err := LoadConfig("")
 	if err != nil {
-		return utils.ConfigStruct{},nil, nil, fmt.Errorf("%w: %v", utils.ErrConfigInit, err)
+		return utils.ConfigStruct{}, nil, nil, fmt.Errorf("%w: %v", utils.ErrConfigInit, err)
 	}
 
 	// Check for missing required configuration values
@@ -38,7 +36,7 @@ func InitConfig(ctx context.Context) (utils.ConfigStruct, *sql.DB, *ethclient.Cl
 		len(configDetails.JWTSecretKey) == 0 || len(configDetails.JWTResetSecretKey) == 0 ||
 		len(configDetails.SuperUserEmail) == 0 || len(configDetails.SuperUserPassword) == 0 ||
 		len(configDetails.SMTPHost) == 0 || len(configDetails.SMTPPort) == 0 ||
-		len(configDetails.SenderEmail) == 0 || len(configDetails.SenderPassword) == 0 {
+		len(configDetails.SenderEmail) == 0 || len(configDetails.SenderPassword) == 0 || len(configDetails.EtherscanAPI) == 0 || len(configDetails.EtherscanAPIKey) == 0 {
 		return utils.ConfigStruct{}, nil, nil, fmt.Errorf("%w: missing environment variable or file", utils.ErrConfigInit)
 	}
 

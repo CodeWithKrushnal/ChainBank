@@ -31,9 +31,9 @@ const (
 	GetTransactionsQuery                = `SELECT transaction_id, sender_wallet_id, receiver_wallet_id, amount, transaction_type, status, transaction_hash, fee, created_at FROM transactions WHERE 1=1`
 )
 
-const (
-	encryptionKey = "your-32-bytelen-secret-key-here!"
-)
+// const (
+// 	encryptionKey = "your-32-bytelen-secret-key-here!"
+// )
 
 // Transaction represents a row in the transactions table
 type Transaction struct {
@@ -139,9 +139,9 @@ func ensureValidKey(key string) ([]byte, error) {
 }
 
 // encryptPrivateKey encrypts the private key using AES-256-CFB encryption. It returns the encrypted private key as a base64 encoded string or an error if the encryption fails.
-func encryptPrivateKey(privateKey string) (string, error) {
+func encryptPrivateKey(privateKey string, configDetails utils.ConfigStruct) (string, error ) {
 	// Ensure the encryption key is valid
-	validKey, err := ensureValidKey(encryptionKey)
+	validKey, err := ensureValidKey(configDetails.WalletEncryptionKey)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", utils.ErrInvalidEncryptionKeySize, err)
 	}
@@ -183,9 +183,9 @@ func encryptPrivateKey(privateKey string) (string, error) {
 }
 
 // decryptPrivateKey decrypts the encrypted private key using AES-256-CFB decryption. It returns the decrypted private key as a string or an error if the decryption fails.
-func decryptPrivateKey(encryptedKey string) (string, error) {
+func decryptPrivateKey(encryptedKey string, configDetails utils.ConfigStruct) (string, error) {
 	// Ensure the encryption key is valid
-	validKey, err := ensureValidKey(encryptionKey)
+	validKey, err := ensureValidKey(configDetails.WalletEncryptionKey)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", utils.ErrInvalidEncryptionKey, err)
 	}
@@ -254,7 +254,7 @@ func unpad(data []byte) []byte {
 // InsertPrivateKey inserts the user_id, wallet_id, and encrypted private key into the database.
 func (repoDep *WalletRepo) InsertPrivateKey(ctx context.Context, userID, walletID, privateKey string) error {
 	// Encrypt the private key
-	encryptedKey, err := encryptPrivateKey(privateKey)
+	encryptedKey, err := encryptPrivateKey(privateKey, repoDep.configDetails)
 	if err != nil {
 		return fmt.Errorf("%s: %w", utils.ErrEncryptingPrivateKey, err)
 	}
@@ -292,7 +292,7 @@ func (repoDep *WalletRepo) RetrievePrivateKey(ctx context.Context, userID, walle
 	}
 
 	// Decrypt the private key
-	privateKey, err := decryptPrivateKey(encryptedKey)
+	privateKey, err := decryptPrivateKey(encryptedKey, repoDep.configDetails)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", utils.ErrDecryptingPrivateKey, err)
 	}

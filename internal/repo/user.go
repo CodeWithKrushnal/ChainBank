@@ -114,7 +114,7 @@ const (
 	getUserInfoQuery                 = `SELECT u.user_id, u.username, u.full_name, u.email, w.wallet_id, r.role_id from users u JOIN wallets w on u.user_id=w.user_id JOIN user_roles_assignment r ON u.user_id=r.user_id where u.user_id=$1`
 )
 
-type userRepo struct {
+type UserRepo struct {
 	DB            *sql.DB
 	configDetails utils.ConfigStruct
 }
@@ -142,11 +142,11 @@ type UserStorer interface {
 
 // Constructor function
 func NewUserRepo(db *sql.DB, configDetails utils.ConfigStruct) UserStorer {
-	return &userRepo{DB: db, configDetails: configDetails}
+	return &UserRepo{DB: db, configDetails: configDetails}
 }
 
 // Creates a new user in DB
-func (rd *userRepo) CreateUser(ctx context.Context, params CreateUserParams) error {
+func (rd *UserRepo) CreateUser(ctx context.Context, params CreateUserParams) error {
 	// Attempt to insert a new user into the database
 	_, err := rd.DB.Exec(userRegisterQuery, params.Username, params.Email, params.PasswordHash, params.FullName, params.DOB)
 	if err != nil {
@@ -175,7 +175,7 @@ func (rd *userRepo) CreateUser(ctx context.Context, params CreateUserParams) err
 }
 
 // Returnes a user object by passing email
-func (rd *userRepo) GetUserByEmail(ctx context.Context, email string) (User, error) {
+func (rd *UserRepo) GetUserByEmail(ctx context.Context, email string) (User, error) {
 	var user User
 
 	// Attempt to retrieve the user by email
@@ -193,7 +193,7 @@ func (rd *userRepo) GetUserByEmail(ctx context.Context, email string) (User, err
 }
 
 // UpdateLastLogin updates the last login timestamp for a user.
-func (rd *userRepo) UpdateLastLogin(ctx context.Context, userID string) error {
+func (rd *UserRepo) UpdateLastLogin(ctx context.Context, userID string) error {
 	_, err := rd.DB.Exec(updateLastLoginQuery, time.Now(), userID)
 	if err != nil {
 		return fmt.Errorf(utils.ErrorFormat, utils.ErrUpdatingLastLogin, err)
@@ -202,7 +202,7 @@ func (rd *userRepo) UpdateLastLogin(ctx context.Context, userID string) error {
 }
 
 // UserExists checks if a user already exists based on username and email.
-func (rd *userRepo) UserExists(ctx context.Context, userName, email string) (usernameAlreadyExists, emailAlreadyExists bool, err error) {
+func (rd *UserRepo) UserExists(ctx context.Context, userName, email string) (usernameAlreadyExists, emailAlreadyExists bool, err error) {
 
 	// Check if username already exists
 	err = rd.DB.QueryRow(usernameAlreadyInExistanceQuery, userName).Scan(&usernameAlreadyExists)
@@ -220,7 +220,7 @@ func (rd *userRepo) UserExists(ctx context.Context, userName, email string) (use
 }
 
 // GetUserHighestRole fetches the highest role assigned to a user based on user_id.
-func (rd *userRepo) GetUserHighestRole(ctx context.Context, userID string) (int, error) {
+func (rd *UserRepo) GetUserHighestRole(ctx context.Context, userID string) (int, error) {
 
 	var highestRoleLevel int
 
@@ -240,7 +240,7 @@ func (rd *userRepo) GetUserHighestRole(ctx context.Context, userID string) (int,
 }
 
 // InsertKYCVerification inserts a new KYC verification record.
-func (rd *userRepo) InsertKYCVerification(ctx context.Context, userID, documentType, documentNumber, verificationStatus string) (string, error) {
+func (rd *UserRepo) InsertKYCVerification(ctx context.Context, userID, documentType, documentNumber, verificationStatus string) (string, error) {
 	var kycID string
 
 	err := rd.DB.QueryRowContext(ctx, insertKYCVerificationQuery, userID, documentType, documentNumber, verificationStatus).Scan(&kycID)
@@ -251,7 +251,7 @@ func (rd *userRepo) InsertKYCVerification(ctx context.Context, userID, documentT
 }
 
 // GetAllKYCVerifications retrieves all KYC verification records.
-func (rd *userRepo) GetAllKYCVerifications(ctx context.Context) ([]KYCRecord, error) {
+func (rd *UserRepo) GetAllKYCVerifications(ctx context.Context) ([]KYCRecord, error) {
 	rows, err := rd.DB.QueryContext(ctx, getAllKYCVerificationsQuery)
 	if err != nil {
 		return nil, fmt.Errorf(utils.ErrorFormat, utils.ErrFetchKYCVerifications, err)
@@ -283,7 +283,7 @@ func (rd *userRepo) GetAllKYCVerifications(ctx context.Context) ([]KYCRecord, er
 }
 
 // UpdateKYCVerificationStatus updates verification_status, verified_at, and verified_by.
-func (rd *userRepo) UpdateKYCVerificationStatus(ctx context.Context, kycID, verificationStatus, verifiedBy string) error {
+func (rd *UserRepo) UpdateKYCVerificationStatus(ctx context.Context, kycID, verificationStatus, verifiedBy string) error {
 
 	_, err := rd.DB.ExecContext(ctx, updateKYCVerificationStatusQuery, verificationStatus, time.Now(), verifiedBy, kycID)
 	if err != nil {
@@ -293,7 +293,7 @@ func (rd *userRepo) UpdateKYCVerificationStatus(ctx context.Context, kycID, veri
 }
 
 // GetKYCDetailedInfo retrieves detailed KYC information based on kycID or userID.
-func (rd *userRepo) GetKYCDetailedInfo(ctx context.Context, kycID, userID string) ([]KYCRecord, error) {
+func (rd *UserRepo) GetKYCDetailedInfo(ctx context.Context, kycID, userID string) ([]KYCRecord, error) {
 	var query string
 	var args []interface{}
 
@@ -340,14 +340,14 @@ func (rd *userRepo) GetKYCDetailedInfo(ctx context.Context, kycID, userID string
 }
 
 // GetuserByID retrieves user information based on userID.
-func (rd *userRepo) GetuserByID(ctx context.Context, userID string) (User, error) {
+func (rd *UserRepo) GetuserByID(ctx context.Context, userID string) (User, error) {
 	var user User
 	err := rd.DB.QueryRow(getUserByIDQuery, userID).Scan(&user.ID, &user.Username, &user.Email, &user.Password, &user.CreatedAt)
 	return user, err
 }
 
 // CreateRequestLog creates a new request log entry.
-func (rd *userRepo) CreateRequestLog(ctx context.Context, requestID, userID, endpoint, httpMethod string, requestPayload interface{}, ipAddress string) (string, error) {
+func (rd *UserRepo) CreateRequestLog(ctx context.Context, requestID, userID, endpoint, httpMethod string, requestPayload interface{}, ipAddress string) (string, error) {
 	// Check if userID is empty and set to default value
 	if userID == "" {
 		userID = "00000000-0000-0000-0000-000000000000"
@@ -372,7 +372,7 @@ func (rd *userRepo) CreateRequestLog(ctx context.Context, requestID, userID, end
 }
 
 // UpdateRequestLog updates the request log entry with the given response status and response time.
-func (rd *userRepo) UpdateRequestLog(ctx context.Context, requestID string, responseStatus, responseTimeMs int) error {
+func (rd *UserRepo) UpdateRequestLog(ctx context.Context, requestID string, responseStatus, responseTimeMs int) error {
 	// Execute the query to update the request log
 	_, err := rd.DB.ExecContext(ctx, updateRequestLogQuery, responseStatus, responseTimeMs, requestID)
 	if err != nil {
@@ -383,7 +383,7 @@ func (rd *userRepo) UpdateRequestLog(ctx context.Context, requestID string, resp
 }
 
 // UpdateUserPasswordHash updates the password hash for a user based on their user ID.
-func (rd *userRepo) UpdateUserPasswordHash(ctx context.Context, userID string, newPasswordHash string) error {
+func (rd *UserRepo) UpdateUserPasswordHash(ctx context.Context, userID string, newPasswordHash string) error {
 	// Execute the query to update the password hash
 	_, err := rd.DB.ExecContext(ctx, updatePasswordHashQuery, newPasswordHash, userID)
 	if err != nil {
@@ -393,7 +393,7 @@ func (rd *userRepo) UpdateUserPasswordHash(ctx context.Context, userID string, n
 	return nil
 }
 
-func (rd *userRepo) GetRequestLogs(ctx context.Context, filter RequestLogFilter) ([]RequestLog, error) {
+func (rd *UserRepo) GetRequestLogs(ctx context.Context, filter RequestLogFilter) ([]RequestLog, error) {
 	var query string
 	var args []interface{}
 
@@ -469,7 +469,7 @@ func (rd *userRepo) GetRequestLogs(ctx context.Context, filter RequestLogFilter)
 	return logs, nil
 }
 
-func (rd *userRepo) GetRequestLogStats(ctx context.Context, filter RequestLogStatsFilter) (interface{}, error) {
+func (rd *UserRepo) GetRequestLogStats(ctx context.Context, filter RequestLogStatsFilter) (interface{}, error) {
 	if filter.Column != "request_id" && filter.Column != "user_id" && filter.Column != "endpoint" &&
 		filter.Column != "http_method" && filter.Column != "response_status" && filter.Column != "response_time_ms" {
 		return nil, fmt.Errorf("invalid column name: %s", filter.Column)
@@ -528,13 +528,13 @@ func (rd *userRepo) GetRequestLogStats(ctx context.Context, filter RequestLogSta
 	return result, nil
 }
 
-func (rd *userRepo) GetUserInfo(ctx context.Context, userID string) (utils.UserInfo, error) {
+func (rd *UserRepo) GetUserInfo(ctx context.Context, userID string) (utils.UserInfo, error) {
 	var user utils.UserInfo
 	err := rd.DB.QueryRow(getUserInfoQuery, userID).Scan(&user.UserID, &user.Username, &user.FullName, &user.Email, &user.WalletID, &user.Role)
 	return user, err
 }
 
-func (td *userRepo) GetTransactionStats(ctx context.Context, filter TransactionStatsFilter) (interface{}, error) {
+func (td *UserRepo) GetTransactionStats(ctx context.Context, filter TransactionStatsFilter) (interface{}, error) {
 	// Validate the column
 	if filter.Column != "amount" && filter.Column != "status" && filter.Column != "fee" {
 		return nil, fmt.Errorf("invalid column name: %s", filter.Column)
@@ -614,8 +614,7 @@ func (td *userRepo) GetTransactionStats(ctx context.Context, filter TransactionS
 	return result, nil
 }
 
-
-func (td *userRepo) ExecuteQuery(ctx context.Context, query string, args ...interface{}) (interface{}, error) {
+func (td *UserRepo) ExecuteQuery(ctx context.Context, query string, args ...interface{}) (interface{}, error) {
     // Execute the query
     rows, err := td.DB.QueryContext(ctx, query, args...)
     if err != nil {

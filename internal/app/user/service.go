@@ -39,7 +39,7 @@ func NewService(ctx context.Context, userRepo repo.UserStorer, walletRepo repo.W
 // Add necesary method signature to be made accesible by service layer
 type Service interface {
 	CreateUserAccount(ctx context.Context, req SignupRequest) (repo.User, error)
-	AuthenticateUser(ctx context.Context, credentials AuthCredentials, originIP string) (map[string]string, error)
+	AuthenticateUser(ctx context.Context, credentials utils.Credentials, originIP string) (map[string]string, error)
 	InsertKYCVerificationService(ctx context.Context, UserEmail, documentType, documentNumber, verificationStatus string) (string, error)
 	GetAllKYCVerificationsService(ctx context.Context) ([]repo.KYCRecord, error)
 	UpdateKYCVerificationStatusService(ctx context.Context, kycID, verificationStatus, verifiedBy string) error
@@ -54,19 +54,19 @@ type Service interface {
 	GetRequestLogStats(ctx context.Context, filter repo.RequestLogStatsFilter) (interface{}, error)
 	GenerateEmailVerificationToken(ctx context.Context, email string, originIP string) (string, error)
 	GetUserInfo(ctx context.Context, userID string) (utils.UserInfo, error)
-	GetTransactionStats(ctx context.Context, filter repo.TransactionStatsFilter)(interface{}, error)
+	GetTransactionStats(ctx context.Context, filter repo.TransactionStatsFilter) (interface{}, error)
 	GetConfig(ctx context.Context) (utils.ConfigStruct, error)
 	ExecuteQuery(ctx context.Context, query string, args ...interface{}) (interface{}, error)
-}
-
-type AuthCredentials struct {
-	Email    string
-	Password string
+	ValidateEmailVerificationToken(tokenString string) (jwt.MapClaims, error)
 }
 
 // GenerateLoginToken generates a JWT token for user authentication.
 func GenerateLoginToken(ctx context.Context, email string, originIP string, configDetails utils.ConfigStruct) (string, error) {
 	const loginTokenExpirationHours = 24
+
+	if configDetails.JWTSecretKey == "" {
+		return "", utils.ErrEmptySecretKey
+	}
 
 	jwtSecret := []byte(configDetails.JWTSecretKey)
 
@@ -92,6 +92,10 @@ func GenerateLoginToken(ctx context.Context, email string, originIP string, conf
 // GenerateResetToken generates a JWT token for password reset.
 func GenerateResetToken(ctx context.Context, email string, originIP string, configDetails utils.ConfigStruct) (string, error) {
 	const resetTokenExpirationMinutes = 5
+
+	if configDetails.JWTResetSecretKey == "" {
+		return "", utils.ErrEmptySecretKey
+	}
 
 	jwtResetSecret := []byte(configDetails.JWTResetSecretKey)
 
@@ -211,7 +215,7 @@ func (sd service) CreateUserAccount(ctx context.Context, req SignupRequest) (rep
 }
 
 // AuthenticateUser authenticates a user based on provided credentials and returns login and reset tokens.
-func (sd service) AuthenticateUser(ctx context.Context, credentials AuthCredentials, originIP string) (map[string]string, error) {
+func (sd service) AuthenticateUser(ctx context.Context, credentials utils.Credentials, originIP string) (map[string]string, error) {
 	// Retrieve user by email
 	user, err := sd.userRepo.GetUserByEmail(ctx, credentials.Email)
 	if err != nil {
@@ -428,7 +432,12 @@ func (sd service) GetUserByEmail(ctx context.Context, email string) (repo.User, 
 func (sd service) GenerateEmailVerificationToken(ctx context.Context, email string, originIP string) (string, error) {
 	const emailVerificationTokenExpirationMinutes = 5
 
+	if sd.configDetails.JWTSecretKey == "" {
+		return "", utils.ErrEmptySecretKey
+	}
+
 	jwtSecret := []byte(sd.configDetails.JWTSecretKey)
+
 
 	// Define expiration time
 	emailVerificationExpiration := time.Now().Add(time.Minute * emailVerificationTokenExpirationMinutes) // 5 Minutes
@@ -487,7 +496,7 @@ func (sd service) GetUserInfo(ctx context.Context, userID string) (utils.UserInf
 	return sd.userRepo.GetUserInfo(ctx, userID)
 }
 
-func (sd service) GetTransactionStats(ctx context.Context, filter repo.TransactionStatsFilter)(interface{}, error){
+func (sd service) GetTransactionStats(ctx context.Context, filter repo.TransactionStatsFilter) (interface{}, error) {
 	return sd.userRepo.GetTransactionStats(ctx, filter)
 }
 
@@ -495,6 +504,6 @@ func (sd service) GetConfig(ctx context.Context) (utils.ConfigStruct, error) {
 	return sd.configDetails, nil
 }
 
-func (sd service) ExecuteQuery(ctx context.Context, query string, args ...interface{}) (interface{}, error){
+func (sd service) ExecuteQuery(ctx context.Context, query string, args ...interface{}) (interface{}, error) {
 	return sd.userRepo.ExecuteQuery(ctx, query, args...)
 }

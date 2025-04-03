@@ -36,7 +36,7 @@ func main() {
 		return
 	}
 
-	// Enable CORS for all origins, you can also customize this
+	// Enable CORS for all origins
 	corsHandler := cors.New(cors.Options{
 		AllowedOrigins: []string{"*"}, 
 		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
@@ -50,7 +50,7 @@ func main() {
 	handler := corsHandler.Handler(router)
 
 	slog.Info(utils.ServerStartLog)
-	log.Fatal(http.ListenAndServe(":8080", handler))
+	log.Fatal(http.ListenAndServe("0.0.0.0:8080", handler))
 }
 
 // Creates a Superuser along with Server Initialization

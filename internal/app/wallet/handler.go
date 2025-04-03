@@ -27,9 +27,10 @@ func NewHandler(service Service) Handler {
 
 // TransferRequest represents the structure of a transfer request.
 type TransferRequest struct {
-	RecipientEmail string `json:"recipient_email"`
-	AmountETH      string `json:"amount"`
-	Password       string `json:"password"`
+	RecipientEmail    string `json:"recipient_email"`
+	AmountETH         string `json:"amount"`
+	Password          string `json:"password"`
+	RecepientWalletID string `json:"recepient_wallet_id"`
 }
 
 // GetBalanceHandler handles the balance retrieval request.
@@ -200,7 +201,7 @@ func (hd Handler) GetTransactionsHandler(w http.ResponseWriter, r *http.Request)
 		FromTime:      fromTime,
 		ToTime:        toTime,
 		Page:          1,
-		Limit:         10,
+		Limit:         1000,
 	})
 	if err != nil {
 		slog.Error(utils.ErrRetrievingOffersFromApplicationID.Error(), utils.ErrorTag, err) // Use a relevant error message

@@ -178,10 +178,16 @@ func (sd service) TransferFunds(ctx context.Context, userInfo utils.User, req Tr
 		return repo.Transaction{}, nil, fmt.Errorf(utils.ErrorFormat, utils.ErrSenderWalletNotFound, err)
 	}
 
+	var recipientWalletID string
+
 	// Get recipient wallet ID
-	recipientWalletID, err := sd.walletRepo.GetWalletID(ctx, req.RecipientEmail, "")
-	if err != nil {
-		return repo.Transaction{}, nil, fmt.Errorf(utils.ErrorFormat, utils.ErrRecipientWalletNotFound, err)
+	if req.RecepientWalletID == "" {
+		recipientWalletID, err = sd.walletRepo.GetWalletID(ctx, req.RecipientEmail, "")
+		if err != nil {
+			return repo.Transaction{}, nil, fmt.Errorf(utils.ErrorFormat, utils.ErrRecipientWalletNotFound, err)
+		}
+	} else {
+		recipientWalletID = req.RecepientWalletID
 	}
 
 	// Validate user password
@@ -272,13 +278,15 @@ func (sd service) TransferFunds(ctx context.Context, userInfo utils.User, req Tr
 	}
 
 	// Update recipient's balance
-	balance2, err := ethereum.EthereumClient.BalanceAt(context.Background(), common.HexToAddress(recipientWalletID), nil)
-	if err != nil {
-		return repo.Transaction{}, exactFee, fmt.Errorf(utils.ErrorFormat, utils.ErrFailedToFetchBalance, err)
-	}
-	ethBalance2 := new(big.Float).Quo(new(big.Float).SetInt(balance2), big.NewFloat(1e18))
-	if err := sd.walletRepo.UpdateBalance(ctx, recipientWalletID, ethBalance2); err != nil {
-		return repo.Transaction{}, exactFee, fmt.Errorf(utils.ErrorFormat, utils.ErrFailedToUpdateWalletBalance, err)
+	if req.RecepientWalletID == "" {
+		balance2, err := ethereum.EthereumClient.BalanceAt(context.Background(), common.HexToAddress(recipientWalletID), nil)
+		if err != nil {
+			return repo.Transaction{}, exactFee, fmt.Errorf(utils.ErrorFormat, utils.ErrFailedToFetchBalance, err)
+		}
+		ethBalance2 := new(big.Float).Quo(new(big.Float).SetInt(balance2), big.NewFloat(1e18))
+		if err := sd.walletRepo.UpdateBalance(ctx, recipientWalletID, ethBalance2); err != nil {
+			return repo.Transaction{}, exactFee, fmt.Errorf(utils.ErrorFormat, utils.ErrFailedToUpdateWalletBalance, err)
+		}
 	}
 
 	return transaction, exactFee, nil

@@ -383,4 +383,5 @@ var (
 	ErrInvalidRequestLogStatsFilter                              = errors.New("invalid request log stats filter")
 	ErrFetchingTransactionStats                                  = errors.New("failed to fetch transaction stats")
 	ErrFetchingConfig                                            = errors.New("failed to fetch configuration")
+	ErrEmptySecretKey                                            = errors.New("secret key cannot be empty")
 )

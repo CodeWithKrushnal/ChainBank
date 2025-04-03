@@ -29,12 +29,6 @@ type SignupResponse struct {
 	WalletAddress string `json:"wallet_address"`
 }
 
-// Define a reusable struct for credentials
-type Credentials struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
-}
-
 // Handler struct
 type Handler struct {
 	Service Service
@@ -91,7 +85,7 @@ func (hd Handler) SignupHandler(w http.ResponseWriter, r *http.Request) {
 // SignInHandler handles the user sign-in request and authenticates the user.
 func (hd Handler) SignInHandler(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	var credentials Credentials
+	var credentials utils.Credentials
 
 	// Log the origin IP address of the request
 	originIP := r.RemoteAddr
@@ -109,10 +103,7 @@ func (hd Handler) SignInHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Authenticate the user
-	response, err := hd.Service.AuthenticateUser(ctx, struct {
-		Email    string
-		Password string
-	}(credentials), originIP)
+	response, err := hd.Service.AuthenticateUser(ctx, credentials, originIP)
 	if err != nil {
 		slog.Error(utils.ErrRetrievingUserByID.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrInvalidCredentials.Error(), http.StatusUnauthorized)
@@ -121,7 +112,7 @@ func (hd Handler) SignInHandler(w http.ResponseWriter, r *http.Request) {
 
 	timestamp := time.Now().Format(time.RFC1123)
 	message := fmt.Sprintf("A new login was detected from the device with IP: <strong>%s</strong> at <strong>%s</strong>.<br>If this was not you, please take appropriate action.", originIP, timestamp)
-	hd.Service.SendEmail(ctx, credentials.Email, "New Login Alert", message)
+	go hd.Service.SendEmail(ctx, credentials.Email, "New Login Alert", message)
 
 	// Set the response header and encode the response
 	w.Header().Set(utils.ContentTypeHeader, utils.ContentTypeJSON)
@@ -549,8 +540,8 @@ func (hd Handler) GetRequestLogStatsHandler(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	res:=make(map[string]interface{})
-	res["stat"]=stats
+	res := make(map[string]interface{})
+	res["stat"] = stats
 
 	// Respond with the stats
 	w.WriteHeader(http.StatusOK)
@@ -600,8 +591,8 @@ func (hd Handler) GetTransactionStatsHandler(w http.ResponseWriter, r *http.Requ
 	// Get transaction stats
 	stats, err := hd.Service.GetTransactionStats(ctx, filter)
 
-	resp:= make(map[string]interface{})
-	resp["amount"]=stats
+	resp := make(map[string]interface{})
+	resp["amount"] = stats
 
 	if err != nil {
 		slog.Error(utils.ErrFetchingTransactionStats.Error(), utils.ErrorTag, err)
@@ -630,15 +621,15 @@ type ApiResponse struct {
 func (hd Handler) GetEthPriceHandler(w http.ResponseWriter, r *http.Request) {
 	// The URL with your API key (replace "your_api_key" with the actual key)
 	ctx := r.Context()
-	config,err := hd.Service.GetConfig(ctx)
+	config, err := hd.Service.GetConfig(ctx)
 	if err != nil {
 		slog.Error(utils.ErrFetchingConfig.Error(), utils.ErrorTag, err)
 		http.Error(w, utils.ErrFetchingConfig.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	apiURL:=config.EtherscanAPI+"&apikey="+config.EtherscanAPIKey
-	
+	apiURL := config.EtherscanAPI + "&apikey=" + config.EtherscanAPIKey
+
 	// Make the HTTP request
 	resp, err := http.Get(apiURL)
 	if err != nil {
@@ -665,13 +656,12 @@ func (hd Handler) GetEthPriceHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, `{"ethusd": "%s"}`, apiResponse.Result.EthUsd)
 }
 
-
 var queryMap = map[string]string{
-	"unique_senders": "SELECT COUNT(DISTINCT sender_wallet_id) FROM transactions",
-	"total_users": "SELECT count(user_id) FROM users",
-	"total_transactions": "SELECT count(transaction_id) FROM transactions",
-	"endpoint_usage": "SELECT endpoint, count(request_id) as count FROM api_requests_log GROUP BY endpoint ORDER BY count DESC LIMIT 10",
-	"transaction_types_distribution" :"SELECT transaction_type, count(transaction_id) as count from transactions GROUP BY transaction_type",
+	"unique_senders":                 "SELECT COUNT(DISTINCT sender_wallet_id) FROM transactions",
+	"total_users":                    "SELECT count(user_id) FROM users",
+	"total_transactions":             "SELECT count(transaction_id) FROM transactions",
+	"endpoint_usage":                 "SELECT endpoint, count(request_id) as count FROM api_requests_log GROUP BY endpoint ORDER BY count DESC LIMIT 10",
+	"transaction_types_distribution": "SELECT transaction_type, count(transaction_id) as count from transactions GROUP BY transaction_type",
 }
 
 func (hd Handler) ExecuteQueryHandler(w http.ResponseWriter, r *http.Request) {

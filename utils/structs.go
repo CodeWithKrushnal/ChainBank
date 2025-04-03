@@ -15,22 +15,29 @@ type UserInfo struct {
 	Role     int    `json:"role"`
 }
 
+// Define a reusable struct for credentials
+type Credentials struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
 type ConfigStruct struct {
-	DatabaseURL       string `mapstructure:"DATABASE_URL"`
-	DatabaseUsername  string `mapstructure:"DB_USERNAME"`
-	DatabasePassword  string `mapstructure:"DB_PASSWORD"`
-	EthereumRPC       string `mapstructure:"ETHEREUM_RPC"`
-	JWTSecretKey      string `mapstructure:"JWT_SECRET"`
-	JWTResetSecretKey string `mapstructure:"JWT_RESET_SECRET"`
-	SuperUserEmail    string `mapstructure:"SUPER_USER_EMAIL"`
-	SuperUserPassword string `mapstructure:"SUPER_USER_PASSWORD"`
-	SendGridAPIKey    string `mapstructure:"SENDGRID_API_KEY"`
-	SMTPHost          string `mapstructure:"SMTP_HOST"`
-	SMTPPort          string `mapstructure:"SMTP_PORT"`
-	SenderEmail       string `mapstructure:"SENDER_EMAIL"`
-	SenderPassword    string `mapstructure:"SENDER_PASSWORD"`
-	EtherscanAPI      string `mapstructure:"ETHERSCAN_API"`
-	EtherscanAPIKey   string `mapstructure:"ETHERSCAN_API_KEY"`
+	DatabaseURL         string `mapstructure:"DATABASE_URL"`
+	DatabaseUsername    string `mapstructure:"DB_USERNAME"`
+	DatabasePassword    string `mapstructure:"DB_PASSWORD"`
+	EthereumRPC         string `mapstructure:"ETHEREUM_RPC"`
+	JWTSecretKey        string `mapstructure:"JWT_SECRET"`
+	JWTResetSecretKey   string `mapstructure:"JWT_RESET_SECRET"`
+	SuperUserEmail      string `mapstructure:"SUPER_USER_EMAIL"`
+	SuperUserPassword   string `mapstructure:"SUPER_USER_PASSWORD"`
+	SendGridAPIKey      string `mapstructure:"SENDGRID_API_KEY"`
+	SMTPHost            string `mapstructure:"SMTP_HOST"`
+	SMTPPort            string `mapstructure:"SMTP_PORT"`
+	SenderEmail         string `mapstructure:"SENDER_EMAIL"`
+	SenderPassword      string `mapstructure:"SENDER_PASSWORD"`
+	EtherscanAPI        string `mapstructure:"ETHERSCAN_API"`
+	EtherscanAPIKey     string `mapstructure:"ETHERSCAN_API_KEY"`
+	WalletEncryptionKey string `mapstructure:"WALLET_ENCRYPTION_KEY"`
 }
 
 const (
